@@ -20,7 +20,43 @@ from pymclevel.infiniteworld import AnvilChunk
 # Installing requirements in Debian/Ubuntu:
 # ln -s /PATH/TO/pymclevel /PATH/TO/THIS/SCRIPT
 
-"""Creates a Chest of items dropped after death"""
+"""Salvages dropped items after death back to Inventory
+
+Ideas:
+- class Inventory(object)
+    def init(player)
+    def stack_item(item, partial=True, armor=True)
+        return remainder(int), counts(list of ints), slots(list of ints)
+    def add_item(item, armor=True)
+        return slot
+
+- for i, entity in enumerate(list(entities)):
+    if item:
+        remainder, counts, _ = inventory.stack_item(item...)
+        if counts:
+            dirty = True
+        if remainder == 0:
+            entities.pop(i)
+        else:
+            fail[item.key] = fail.setdefault(item.key, 0) + remainder
+    if mob:
+        for j, equip in enumerate(equipment)
+        slot = invetory.add_item(item...)
+        if slot:
+            equipment[j] = nbt.tag_compund()  # empty
+        else:
+            fail[item.key] = fail.setdefault(item.key, 0) + 1
+
+- No such thing as full inventory: may fail for one item and succeed the next
+
+- Final report:
+    - Inventory after salvage
+    - Failed items count
+
+- XPOrb absorb?
+- XPOrb as death location: set.add(chunk +0+0, -1-1, +1+1, -1+0, ...) 9 chunks
+
+"""
 
 import sys
 import os
@@ -173,6 +209,19 @@ def get_itemkey(item):
             item["Damage"].value)
 
 
+
+class Item(object):
+
+    _types = get_itemtypes()
+    _armorslots = {i: 103 - ((i - 298) % 4) for i in xrange(298, 318)}
+
+    def __init__(self, item):
+        self.item = item
+        self.key = (self.item["id"].value,
+                    self.item["Damage"].value)
+        self.type = _types.findItem(*self.key)
+
+
 def stack_item(item, stacks, itemtypes=None):
     '''Append an item to a list, trying to stack with other items
         respecting item's max stack size
@@ -311,64 +360,6 @@ class PyMCLevelError(Exception):
     pass
 
 
-def get_bookpages(inventory):
-    for item in inventory:
-        if item["id"].value == 386:  # Book and Quill
-            book = item
-            break
-    else:
-        raise LookupError("No book found in inventory")
-
-    # Books that were never written on have no "tag" key,
-    # so create it the same as in-game does:
-    # with a "pages" key containing an empty string as 1st page
-    book.setdefault("tag", new_booktag())
-    return book, book["tag"]["pages"]
-
-
-def new_booktag():
-    from pymclevel import nbt
-    tag = nbt.TAG_Compound()
-    tag["pages"] = nbt.TAG_List([nbt.TAG_String()])
-    return tag
-
-
-def new_book(inventory=None, slot=None):
-    # TAG_Compound({
-    #   "id": TAG_Short(386),
-    #   "Damage": TAG_Short(0),
-    #   "Count": TAG_Byte(1),
-    #   "tag": TAG_Compound({
-    #     "pages": TAG_List([
-    #       TAG_String(u''),
-    #     ]),
-    #   }),
-    #   "Slot": TAG_Byte(0),
-    # })
-    from pymclevel import nbt
-
-    if slot is None:
-        if inventory is None:
-            slot = 0
-        else:
-            slots = free_slots(inventory)
-            if not slots:
-                raise LookupError("No empty slot in inventory to create a new book!")
-            slot = slots[0]
-
-    book = nbt.TAG_Compound()
-    book["id"]     = nbt.TAG_Short(386)
-    book["Damage"] = nbt.TAG_Short(0)
-    book["Count"]  = nbt.TAG_Byte(1)
-    book["Slot"]   = nbt.TAG_Byte(slot)
-    book["tag"]    = new_booktag()
-
-    if inventory is not None:
-        inventory.append(book)
-
-    return book, book["tag"]["pages"]
-
-
 def free_slots(inventory, armor=False):
     if len(inventory) == 40:  # shortcut for full inventory
         return []
@@ -381,71 +372,6 @@ def free_slots(inventory, armor=False):
     return slots
 
 
-def exportbook(world, player=None, filename=None, separator="---"):
-    try:
-        world = load_world(world)
-        inventory = get_player(world, player)["Inventory"]
-
-        log.info("Exporting book from '%s' in '%s' ('%s')",
-                 player, world.LevelName, world.filename)
-
-        book, bookpages = get_bookpages(inventory)
-
-        log.debug("Found book in inventory slot %d", book["Slot"].value)
-
-        pages = [page.value for page in bookpages]
-        with openstd(filename, 'w') as (fd, name):
-            log.debug("Exporting %d pages to %s", len(pages), name)
-            fd.write(("\n%s\n" % separator).join(pages) + "\n")
-
-    except (PyMCLevelError, LookupError, IOError) as e:
-        log.error(e)
-        return
-
-
-def importbook(world, player=None, filename=None, separator="---", append=True, create=True):
-    try:
-        sep = "\n%s\n" % separator
-        with openstd(filename, 'r') as (fd, name):
-            pages = fd.read()[:-1].rstrip(sep).split(sep)
-            log.debug("Importing %d pages from %s", len(pages), name)
-
-        world = load_world(world)
-        inventory = get_player(world, player)["Inventory"]
-
-    except (IOError, PyMCLevelError) as e:
-        log.error(e)
-        return
-
-    log.info("Importing book to '%s' in '%s' ('%s')",
-             player, world.LevelName, world.filename)
-
-    try:
-        book, bookpages = get_bookpages(inventory)
-        log.debug("Found book in inventory slot %d", book["Slot"].value)
-
-    except LookupError as e:
-        if not create:
-            log.error("%s, and create is not enabled.", e)
-            return
-
-        log.info("%s, so creating a new one.", e)
-        try:
-            book, bookpages = new_book(inventory)
-            log.debug("Created book in inventory slot %d\n%s", book["Slot"].value, book)
-        except LookupError as e:
-            log.error(e)
-            return
-
-    from pymclevel import nbt
-
-    if not append:
-        del(bookpages[:])
-
-    for page in pages:
-        bookpages.append(nbt.TAG_String(page))
-
-    world.saveInPlace()
 
 
 if __name__ == '__main__':
