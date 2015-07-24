@@ -165,26 +165,58 @@ def get_player(world, playername=None):
                              (world.LevelName, playername))
 
 
-def get_itemtypes():
-    from pymclevel.items import items as ItemTypes
-    for id, stacksize in (( 58, 64),  # Workbench (Crafting Table)
-                          (116, 64),  # Enchantment Table
-                          (281, 64),  # Bowl
-                          (282,  1),  # Mushroom Stew
-                          (324,  1),  # Wooden Door
-                          (337, 64),  # Clay (Ball)
-                          (344, 16),  # Egg
-                          (345, 64),  # Compass
-                          (347, 64),  # Clock
-                          (379, 64),  # Brewing Stand
-                          (380, 64),  # Cauldron
-                          (395, 64),  # Empty Map
-                          ):
-        ItemTypes.findItem(id).stacksize = stacksize
-    for _, item in sorted(ItemTypes.itemtypes.iteritems()):
-        if item.maxdamage is not None:
-            item.stacksize = 1
-    return ItemTypes
+_ItemTypes = None
+def item_type(item):
+    '''Wrapper to pymclevel Items.findItem() with corrected data'''
+    global _ItemTypes
+    if _ItemTypes is None:
+        from pymclevel.items import items as ItemTypes
+
+        for itemid, maxdamage in ((298,  56),  # Leather Cap
+                                  (299,  81),  # Leather_Tunic
+                                  (300,  76),  # Leather_Pants
+                                  (301,  66),  # Leather_Boots
+                                  (302, 166),  # Chainmail_Helmet
+                                  (303, 241),  # Chainmail_Chestplate
+                                  (304, 226),  # Chainmail_Leggings
+                                  (305, 196),  # Chainmail_Boots
+                                  (306, 166),  # Iron_Helmet
+                                  (307, 241),  # Iron_Chestplate
+                                  (308, 226),  # Iron_Leggings
+                                  (309, 196),  # Iron_Boots
+                                  (310, 364),  # Diamond_Helmet
+                                  (311, 529),  # Diamond_Chestplate
+                                  (312, 496),  # Diamond_Leggings
+                                  (313, 430),  # Diamond_Boots
+                                  (314,  78),  # Golden_Helmet
+                                  (315,  87),  # Golden_Chestplate
+                                  (316,  76),  # Golden_Leggings
+                                  (317,  66),  # Golden_Boots
+                                  ):
+            ItemTypes.findItem(itemid).maxdamage = maxdamage - 1
+
+        for itemid, stacksize in ((58,  64),  # Workbench (Crafting Table)
+                                  (116, 64),  # Enchantment Table
+                                  (281, 64),  # Bowl
+                                  (282,  1),  # Mushroom Stew
+                                  (324,  1),  # Wooden Door
+                                  (337, 64),  # Clay (Ball)
+                                  (344, 16),  # Egg
+                                  (345, 64),  # Compass
+                                  (347, 64),  # Clock
+                                  (368, 16),  # Ender Pearl
+                                  (379, 64),  # Brewing Stand
+                                  (380, 64),  # Cauldron
+                                  (395, 64),  # Empty Map
+                                  ):
+            ItemTypes.findItem(itemid).stacksize = stacksize
+        for itemtype in ItemTypes.itemtypes.itervalues():
+            if itemtype.maxdamage is not None:
+                itemtype.stacksize = 1
+        _ItemTypes = ItemTypes
+
+    return _ItemTypes.findItem(item["id"].value,
+                               item["Damage"].value)
 
 
 def get_itemkey(item):
@@ -242,16 +274,13 @@ def iter_chunks(world, x=None, z=None, radius=250):
              time.clock()-start)
 
 
-def stack_item(item, stacks, itemtypes=None):
+def stack_item(item, stacks):
     '''Append an item to a list, trying to stack with other items
         respecting item's max stack size
         Raises ValueError if item count >= max stack size
     '''
-    if itemtypes is None:
-        itemtypes = get_itemtypes()
-
     key = get_itemkey(item)
-    size = itemtypes.findItem(*key).stacksize
+    size = item_type(item).stacksize
     count = item["Count"].value
 
     # Assertion
@@ -303,7 +332,6 @@ def main(argv=None):
         log.error(e)
         return
 
-    itemtypes = get_itemtypes()
     slots = free_slots(inventory, armor=True)
     armorslots = {i: 103 - ((i - 298) % 4) for i in xrange(298, 318)}
 
@@ -314,7 +342,7 @@ def main(argv=None):
         for entity in chunk.Entities:
             if entity["id"].value == "Item" and entity["Age"].value < 6000:
                 # group with the list
-                stack_item(entity["Item"], items, itemtypes)
+                stack_item(entity["Item"], items)
 
                 # Destroy the item
                 entity["Age"].value = 6000
@@ -332,8 +360,8 @@ def main(argv=None):
                         if not printed:
                             print entity["id"].value
                             printed = True
-                        print "\t", itemtypes.findItem(equip["id"].value)
-                        stack_item(equip, items, itemtypes)
+                        print "\t", item_type(equip)
+                        stack_item(equip, items)
                         # Remove the equipment
                         entity["Equipment"][i] = nbt.TAG_Compound()
                         dirtychunk = True
@@ -362,14 +390,14 @@ def main(argv=None):
 
         item["Slot"] = nbt.TAG_Byte(slot)
         key = get_itemkey(item)
-        type = itemtypes.findItem(*key)
+        itemtype = item_type(item)
         log.info("(%3d, %4d)\t%3d (%2d)\t%3d\t%s" % (
            key[0],
            key[1],
            item["Count"].value,
-           type.stacksize,
+           itemtype.stacksize,
            slot,
-           type.name,
+           itemtype.name,
         ))
 
         inventory.append(item)
