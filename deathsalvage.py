@@ -64,6 +64,10 @@ import argparse
 import logging
 from xdg.BaseDirectory import xdg_cache_home
 import copy
+import time
+
+
+import progressbar
 
 
 if __name__ == '__main__':
@@ -122,6 +126,15 @@ def parseargs(args=None):
                         help="Player name."
                             " [Default: %(default)s]")
 
+    parser.add_argument('--xpos', '-x', dest='xpos', default=None, type=int,
+                        help="Death X coordinate to search for dropped items.")
+    parser.add_argument('--zpos', '-z', dest='zpos', default=None, type=int,
+                        help="Death Z coordinate to search for dropped items.")
+    parser.add_argument('--radius', '-r', dest='radius', default=250, type=int,
+                        help="Radius of the search for items, centered on (X,Z)."
+                            " Ignored if both --xpos and --zpos are not specified."
+                            " [Default: %(default)s]")
+
     return parser.parse_args(args)
 
 
@@ -177,6 +190,56 @@ def get_itemtypes():
 def get_itemkey(item):
     return (item["id"].value,
             item["Damage"].value)
+
+
+def get_chunks(world, x=None, z=None, radius=250):
+    from pymclevel import box
+
+    if x is None and z is None:
+        return world.chunkCount, world.allChunks
+
+    ox = world.bounds.minx if x is None else x - radius
+    oz = world.bounds.minz if z is None else z - radius
+
+    bounds = box.BoundingBox((ox, 0, oz),
+                             (ox + 2 * radius,world.Height,
+                              oz + 2 * radius))
+
+    return bounds.chunkCount, bounds.chunkPositions
+
+
+def iter_chunks(world, x=None, z=None, radius=250):
+
+    log.info("Reading '%s' chunk data from '%s'",
+             world.LevelName, world.filename)
+
+    chunk_max, chunk_range = get_chunks(world, x, z, radius)
+
+    pbar = progressbar.ProgressBar(widgets=[' ', progressbar.Percentage(),
+                                            ' Chunk ', progressbar.SimpleProgress(),
+                                            ' ', progressbar.Bar('.'),
+                                            ' ', progressbar.ETA(), ' '],
+                                   maxval=chunk_max).start()
+    start = time.clock()
+    chunk_count = 0
+
+    for cx, cz in chunk_range:
+        if not world.containsChunk(cx, cz):
+            continue
+
+        chunk = world.getChunk(cx, cz)
+        chunk_count += 1
+
+        yield chunk
+
+        pbar.update(pbar.currval+1)
+
+    pbar.finish()
+    log.info("Data from %d chunks%s extracted in %.2f seconds",
+             chunk_count,
+             (" (out of %d requested)" %  chunk_max)
+                if chunk_max > chunk_count else "",
+             time.clock()-start)
 
 
 def stack_item(item, stacks, itemtypes=None):
@@ -246,7 +309,7 @@ def main(argv=None):
 
     items = []
 
-    for chunk in world.getChunks():
+    for chunk in iter_chunks(world, args.xpos, args.zpos, args.radius):
         dirtychunk = False
         for entity in chunk.Entities:
             if entity["id"].value == "Item" and entity["Age"].value < 6000:
