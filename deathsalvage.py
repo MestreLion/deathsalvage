@@ -178,11 +178,6 @@ def get_itemkey(item):
             item["Damage"].value)
 
 
-
-
-
-
-
 def stack_item(item, stacks, itemtypes=None):
     '''Append an item to a list, trying to stack with other items
         respecting item's max stack size
@@ -236,84 +231,82 @@ def main(argv=None):
     try:
         world = load_world(args.world)
         player = get_player(world, args.player)
-
+        inventory = player["Inventory"]
         if not player["Dimension"].value == 0:  # 0 = Overworld
             world = world.getDimension(player["Dimension"].value)
-
-        itemtypes = get_itemtypes()
-        inventory = player["Inventory"]
-        slots = free_slots(inventory, armor=True)
-        armorslots = {i: 103 - ((i - 298) % 4) for i in xrange(298, 318)}
-
-        items = []
-
-        for chunk in world.getChunks():
-            dirtychunk = False
-            for entity in chunk.Entities:
-                if entity["id"].value == "Item" and entity["Age"].value < 6000:
-                    stack_item(entity["Item"], items, itemtypes)
-                    # Destroy the item
-                    entity["Age"].value = 6000
-                    entity["Health"].value = 0
-                    dirtychunk = True
-
-                # For mobs that can pick up loot, assume their equipment is *your* loot ;)
-                elif ("Equipment" in entity
-                      and "CanPickUpLoot" in entity
-                      and entity["CanPickUpLoot"].value == 1):
-                    printed = False
-                    for i, equip in enumerate(entity["Equipment"]):
-                        if len(equip) > 0 and not (entity["id"].value == "PigZombie" and
-                                                   equip["id"].value == 283):  # Golden Sword:
-                            if not printed:
-                                print entity["id"].value
-                                printed = True
-                            print "\t", itemtypes.findItem(equip["id"].value)
-                            stack_item(equip, items, itemtypes)
-                            # Remove the equipment
-                            entity["Equipment"][i] = nbt.TAG_Compound()
-                            dirtychunk = True
-
-            if dirtychunk:
-                chunk.chunkChanged(calcLighting=False)
-
-        save = False
-        for item in sorted(items, key=get_itemkey):
-            if not slots:
-                break
-
-            slot = armorslots.get(item["id"].value, None)
-            if slots is not None and slot in slots:
-                slots.remove(slot)
-            else:
-                slot = slots.pop(0)
-
-            item["Slot"] = nbt.TAG_Byte(slot)
-            key = get_itemkey(item)
-            type = itemtypes.findItem(*key)
-            log.info("(%3d, %4d)\t%3d (%2d)\t%3d\t%s" % (
-               key[0],
-               key[1],
-               item["Count"].value,
-               type.stacksize,
-               slot,
-               type.name,
-            ))
-
-            inventory.append(item)
-        else:
-            save = True
-
-        if not save:
-            log.warn("No more free slots, aborting!")
-            return
-
-        world.saveInPlace()
-
 
     except (PyMCLevelError, LookupError, IOError) as e:
         log.error(e)
         return
+
+    itemtypes = get_itemtypes()
+    slots = free_slots(inventory, armor=True)
+    armorslots = {i: 103 - ((i - 298) % 4) for i in xrange(298, 318)}
+
+    items = []
+
+    for chunk in world.getChunks():
+        dirtychunk = False
+        for entity in chunk.Entities:
+            if entity["id"].value == "Item" and entity["Age"].value < 6000:
+                stack_item(entity["Item"], items, itemtypes)
+                # Destroy the item
+                entity["Age"].value = 6000
+                entity["Health"].value = 0
+                dirtychunk = True
+
+            # For mobs that can pick up loot, assume their equipment is *your* loot ;)
+            elif ("Equipment" in entity
+                  and "CanPickUpLoot" in entity
+                  and entity["CanPickUpLoot"].value == 1):
+                printed = False
+                for i, equip in enumerate(entity["Equipment"]):
+                    if len(equip) > 0 and not (entity["id"].value == "PigZombie" and
+                                               equip["id"].value == 283):  # Golden Sword:
+                        if not printed:
+                            print entity["id"].value
+                            printed = True
+                        print "\t", itemtypes.findItem(equip["id"].value)
+                        stack_item(equip, items, itemtypes)
+                        # Remove the equipment
+                        entity["Equipment"][i] = nbt.TAG_Compound()
+                        dirtychunk = True
+
+        if dirtychunk:
+            chunk.chunkChanged(calcLighting=False)
+
+    save = False
+    for item in sorted(items, key=get_itemkey):
+        if not slots:
+            break
+
+        slot = armorslots.get(item["id"].value, None)
+        if slots is not None and slot in slots:
+            slots.remove(slot)
+        else:
+            slot = slots.pop(0)
+
+        item["Slot"] = nbt.TAG_Byte(slot)
+        key = get_itemkey(item)
+        type = itemtypes.findItem(*key)
+        log.info("(%3d, %4d)\t%3d (%2d)\t%3d\t%s" % (
+           key[0],
+           key[1],
+           item["Count"].value,
+           type.stacksize,
+           slot,
+           type.name,
+        ))
+
+        inventory.append(item)
+    else:
+        save = True
+
+    if not save:
+        log.warn("No more free slots, aborting!")
+        return
+
+    world.saveInPlace()
 
 
 class PyMCLevelError(Exception):
