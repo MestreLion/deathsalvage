@@ -15,7 +15,6 @@
 #
 #    You should have received a copy of the GNU General Public License
 #    along with this program. See <http://www.gnu.org/licenses/gpl.html>
-from pymclevel.infiniteworld import AnvilChunk
 
 # Installing requirements in Debian/Ubuntu:
 # ln -s /PATH/TO/pymclevel /PATH/TO/THIS/SCRIPT
@@ -60,11 +59,9 @@ Ideas:
 
 import sys
 import os
-import subprocess
 import os.path as osp
 import argparse
 import logging
-import contextlib
 from xdg.BaseDirectory import xdg_cache_home
 import copy
 
@@ -75,34 +72,6 @@ else:
     myname = __name__
 
 log = logging.getLogger(myname)
-
-
-def launchfile(filename):
-    if sys.platform.startswith('darwin'):
-        subprocess.call(('open', filename))
-    elif os.name == 'nt':  # works for sys.platform 'win32' and 'cygwin'
-        os.system("start %s" % filename)  # could be os.startfile() too
-    else:  # Assume POSIX (Linux, BSD, etc)
-        subprocess.call(('xdg-open', filename))
-
-
-@contextlib.contextmanager
-def openstd(filename=None, mode="r"):
-    if filename and filename != '-':
-        fh = open(filename, mode)
-        name = "'%s'" % filename
-    else:
-        if mode.startswith("r"):
-            fh = sys.stdin
-            name = "<stdin>"
-        else:
-            fh = sys.stdout
-            name = "<stdout>"
-    try:
-        yield fh, name
-    finally:
-        if fh is not sys.stdout:
-            fh.close()
 
 
 def setuplogging(level):
@@ -210,16 +179,8 @@ def get_itemkey(item):
 
 
 
-class Item(object):
 
-    _types = get_itemtypes()
-    _armorslots = {i: 103 - ((i - 298) % 4) for i in xrange(298, 318)}
 
-    def __init__(self, item):
-        self.item = item
-        self.key = (self.item["id"].value,
-                    self.item["Damage"].value)
-        self.type = _types.findItem(*self.key)
 
 
 def stack_item(item, stacks, itemtypes=None):
@@ -267,7 +228,6 @@ def stack_item(item, stacks, itemtypes=None):
 def main(argv=None):
 
     args = parseargs(argv)
-
     setuplogging(args.loglevel)
     log.debug(args)
 
