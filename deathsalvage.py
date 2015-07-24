@@ -101,7 +101,7 @@ def setuplogging(level):
 
 def parseargs(args=None):
     parser = argparse.ArgumentParser(
-        description="Creates a Chest of items dropped after death",)
+        description="Recover all items dropped after death back to the player's inventory",)
 
     parser.add_argument('--quiet', '-q', dest='loglevel',
                         const=logging.WARNING, default=logging.INFO,
@@ -148,7 +148,8 @@ def get_player(world, playername=None):
     try:
         return world.getPlayerTag(playername)
     except pymclevel.PlayerNotFound:
-        raise PyMCLevelError("Player not found in world '%s': %s" % (world.LevelName, playername))
+        raise PyMCLevelError("Player not found in world '%s': %s" %
+                             (world.LevelName, playername))
 
 
 def get_itemtypes():
@@ -181,7 +182,7 @@ def get_itemkey(item):
 def stack_item(item, stacks, itemtypes=None):
     '''Append an item to a list, trying to stack with other items
         respecting item's max stack size
-        Raises ValueError if item count <= max stack size
+        Raises ValueError if item count >= max stack size
     '''
     if itemtypes is None:
         itemtypes = get_itemtypes()
@@ -249,7 +250,9 @@ def main(argv=None):
         dirtychunk = False
         for entity in chunk.Entities:
             if entity["id"].value == "Item" and entity["Age"].value < 6000:
+                # group with the list
                 stack_item(entity["Item"], items, itemtypes)
+
                 # Destroy the item
                 entity["Age"].value = 6000
                 entity["Health"].value = 0
@@ -275,6 +278,14 @@ def main(argv=None):
         if dirtychunk:
             chunk.chunkChanged(calcLighting=False)
 
+    log.info("(%3s, %4s)\t%3s (%2s)\t%3s\t%s" % (
+       "ID",
+       "dmg",
+       "count",
+       "max",
+       "slot",
+       "type",
+    ))
     save = False
     for item in sorted(items, key=get_itemkey):
         if not slots:
