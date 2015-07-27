@@ -219,6 +219,15 @@ def item_type(item):
                                item["Damage"].value)
 
 
+def item_name(item, itemtype=None):
+    itemtype = itemtype or item_type(item)
+    if 'tag' in item and 'display' in item['tag']:
+        return "%s [%s]" % (item['tag']['display']['Name'].value,
+                            itemtype.name)
+    else:
+        return itemtype.name
+
+
 def get_itemkey(item):
     return (item["id"].value,
             item["Damage"].value)
@@ -240,18 +249,17 @@ def get_chunks(world, x=None, z=None, radius=250):
     return bounds.chunkCount, bounds.chunkPositions
 
 
-def iter_chunks(world, x=None, z=None, radius=250):
-
-    log.info("Reading '%s' chunk data from '%s'",
-             world.LevelName, world.filename)
+def iter_chunks(world, x=None, z=None, radius=250, progress=True):
 
     chunk_max, chunk_range = get_chunks(world, x, z, radius)
 
-    pbar = progressbar.ProgressBar(widgets=[' ', progressbar.Percentage(),
-                                            ' Chunk ', progressbar.SimpleProgress(),
-                                            ' ', progressbar.Bar('.'),
-                                            ' ', progressbar.ETA(), ' '],
-                                   maxval=chunk_max).start()
+    if progress:
+        pbar = progressbar.ProgressBar(widgets=[' ', progressbar.Percentage(),
+                                                ' Chunk ',
+                                                     progressbar.SimpleProgress(),
+                                                ' ', progressbar.Bar('.'),
+                                                ' ', progressbar.ETA(), ' '],
+                                       maxval=chunk_max).start()
     start = time.clock()
     chunk_count = 0
 
@@ -264,9 +272,12 @@ def iter_chunks(world, x=None, z=None, radius=250):
 
         yield chunk
 
-        pbar.update(pbar.currval+1)
+        if progress:
+            pbar.update(pbar.currval+1)
 
-    pbar.finish()
+    if progress:
+        pbar.finish()
+
     log.info("Data from %d chunks%s extracted in %.2f seconds",
              chunk_count,
              (" (out of %d requested)" %  chunk_max)
@@ -336,11 +347,24 @@ def main(argv=None):
     armorslots = {i: 103 - ((i - 298) % 4) for i in xrange(298, 318)}
 
     items = []
+    log.info("Reading '%s' chunk data from '%s'",
+             world.LevelName, world.filename)
+    log.debug("(%5s, %5s, %3s)\t%4s\t%3s %s", "X", "Z", "Y", "Age", "Qtd", "Item")
 
-    for chunk in iter_chunks(world, args.xpos, args.zpos, args.radius):
+    for chunk in iter_chunks(world, args.xpos, args.zpos, args.radius,
+                             args.loglevel == logging.INFO):
         dirtychunk = False
         for entity in chunk.Entities:
             if entity["id"].value == "Item" and entity["Age"].value < 6000:
+                log.debug("(%5d, %5d, %3d)\t%4d\t%3d %s" % (
+                   entity["Pos"][0].value,
+                   entity["Pos"][2].value,
+                   entity["Pos"][1].value,
+                   entity["Age"].value,
+                   entity["Item"]["Count"].value,
+                   item_name(entity["Item"]),
+                ))
+
                 # group with the list
                 stack_item(entity["Item"], items)
 
@@ -353,15 +377,21 @@ def main(argv=None):
             elif ("Equipment" in entity
                   and "CanPickUpLoot" in entity
                   and entity["CanPickUpLoot"].value == 1):
-                printed = False
+                firstequip = True
                 for i, equip in enumerate(entity["Equipment"]):
                     if len(equip) > 0 and not (entity["id"].value == "PigZombie" and
                                                equip["id"].value == 283):  # Golden Sword:
-                        if not printed:
-                            print entity["id"].value
-                            printed = True
-                        print "\t", item_type(equip)
+                        if firstequip:
+                            firstequip = False
+                            log.debug("(%5d, %5d, %3d) %s equipped with:",
+                                      entity["Pos"][0].value,
+                                      entity["Pos"][2].value,
+                                      entity["Pos"][1].value,
+                                      entity["id"].value)
+
+                        log.debug("%s%s", 37 * ' ', item_name(equip))
                         stack_item(equip, items)
+
                         # Remove the equipment
                         entity["Equipment"][i] = nbt.TAG_Compound()
                         dirtychunk = True
@@ -371,11 +401,11 @@ def main(argv=None):
 
     log.info("(%3s, %4s)\t%3s (%2s)\t%3s\t%s" % (
        "ID",
-       "dmg",
-       "count",
-       "max",
-       "slot",
-       "type",
+       "Dmg",
+       "Qtd",
+       "Max",
+       "Slot",
+       "Item",
     ))
     save = False
     for item in sorted(items, key=get_itemkey):
@@ -397,7 +427,7 @@ def main(argv=None):
            item["Count"].value,
            itemtype.stacksize,
            slot,
-           itemtype.name,
+           item_name(item, itemtype),
         ))
 
         inventory.append(item)
