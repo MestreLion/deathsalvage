@@ -243,7 +243,7 @@ def get_chunks(world, x=None, z=None, radius=250):
     oz = world.bounds.minz if z is None else z - radius
 
     bounds = box.BoundingBox((ox, 0, oz),
-                             (ox + 2 * radius,world.Height,
+                             (ox + 2 * radius, world.Height,
                               oz + 2 * radius))
 
     return bounds.chunkCount, bounds.chunkPositions
@@ -252,6 +252,11 @@ def get_chunks(world, x=None, z=None, radius=250):
 def iter_chunks(world, x=None, z=None, radius=250, progress=True):
 
     chunk_max, chunk_range = get_chunks(world, x, z, radius)
+
+    if chunk_max <= 0:
+        log.warn("No chunks found in range %d of (%d, %d)",
+                 radius, x, z)
+        return
 
     if progress:
         pbar = progressbar.ProgressBar(widgets=[' ', progressbar.Percentage(),
@@ -335,16 +340,12 @@ def main(argv=None):
     try:
         world = load_world(args.world)
         player = get_player(world, args.player)
-        inventory = player["Inventory"]
         if not player["Dimension"].value == 0:  # 0 = Overworld
             world = world.getDimension(player["Dimension"].value)
 
     except (PyMCLevelError, LookupError, IOError) as e:
         log.error(e)
         return
-
-    slots = free_slots(inventory, armor=True)
-    armorslots = {i: 103 - ((i - 298) % 4) for i in xrange(298, 318)}
 
     items = []
     log.info("Reading '%s' chunk data from '%s'",
@@ -399,46 +400,10 @@ def main(argv=None):
         if dirtychunk:
             chunk.chunkChanged(calcLighting=False)
 
-    log.info("(%3s, %4s)\t%3s (%2s)\t%3s\t%s" % (
-       "ID",
-       "Dmg",
-       "Qtd",
-       "Max",
-       "Slot",
-       "Item",
-    ))
-    save = False
-    for item in sorted(items, key=get_itemkey):
-        if not slots:
-            break
+    for _ in sorted(items, key=get_itemkey):
+        pass
 
-        slot = armorslots.get(item["id"].value, None)
-        if slots is not None and slot in slots:
-            slots.remove(slot)
-        else:
-            slot = slots.pop(0)
-
-        item["Slot"] = nbt.TAG_Byte(slot)
-        key = get_itemkey(item)
-        itemtype = item_type(item)
-        log.info("(%3d, %4d)\t%3d (%2d)\t%3d\t%s" % (
-           key[0],
-           key[1],
-           item["Count"].value,
-           itemtype.stacksize,
-           slot,
-           item_name(item, itemtype),
-        ))
-
-        inventory.append(item)
-    else:
-        save = True
-
-    if not save:
-        log.warn("No more free slots, aborting!")
-        return
-
-    world.saveInPlace()
+    #world.saveInPlace()
 
 
 class PyMCLevelError(Exception):
