@@ -243,8 +243,8 @@ def get_chunks(world, x=None, z=None, radius=250):
     oz = world.bounds.minz if z is None else z - radius
 
     bounds = box.BoundingBox((ox, 0, oz),
-                             (ox + 2 * radius, world.Height,
-                              oz + 2 * radius))
+                             (2 * radius, world.Height,
+                              2 * radius))
 
     return bounds.chunkCount, bounds.chunkPositions
 
