@@ -347,7 +347,12 @@ def main(argv=None):
         log.error(e)
         return
 
-    items = []
+    items  = []
+    equips = []
+    xporbs = []
+
+    xavg = zavg = 0
+
     log.info("Reading '%s' chunk data from '%s'",
              world.LevelName, world.filename)
     log.debug("(%5s, %5s, %3s)\t%4s\t%3s %s", "X", "Z", "Y", "Age", "Qtd", "Item")
@@ -365,6 +370,7 @@ def main(argv=None):
                    entity["Item"]["Count"].value,
                    item_name(entity["Item"]),
                 ))
+                items.append(entity)
 
                 # group with the list
                 stack_item(entity["Item"], items)
@@ -373,6 +379,18 @@ def main(argv=None):
                 entity["Age"].value = 6000
                 entity["Health"].value = 0
                 dirtychunk = True
+
+            elif entity["id"].value == "XPOrb":
+                log.debug("(%5d, %5d, %3d)\t%4d\t%3d XP Orb" % (
+                   entity["Pos"][0].value,
+                   entity["Pos"][2].value,
+                   entity["Pos"][1].value,
+                   entity["Age"].value,
+                   entity["Value"].value,
+                ))
+                xavg += entity["Pos"][0].value
+                zavg += entity["Pos"][2].value
+                xporbs.append(entity)
 
             # For mobs that can pick up loot, assume their equipment is *your* loot ;)
             elif ("Equipment" in entity
