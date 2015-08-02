@@ -75,6 +75,11 @@ else:
 log = logging.getLogger(myname)
 
 
+ITEM  = 1
+XPORB = 2
+EQUIP = 3
+
+
 def setuplogging(level):
     # Console output
     for logger, lvl in [(log, level),
@@ -108,13 +113,18 @@ def parseargs(args=None):
     for c in ("x", "z"):
         parser.add_argument('--%spos' % c, '-%s' % c, dest='%spos' %c,
                             default=None, type=int,
-                            help="Death %s coordinate"
-                                "to search for dropped items." % c.upper())
+                            help="Approximate death %s coordinate"
+                                " to search for death location." % c.upper())
 
     parser.add_argument('--radius', '-r', dest='radius', default=250, type=int,
                         help="Radius of the search for items, centered on (X,Z)."
                             " Ignored if both --xpos and --zpos are not specified."
                             " [Default: %(default)s]")
+
+    parser.add_argument('--death-xz', '-d', dest='deathpos', metavar='COORD',
+                        default=None, type=int, nargs=2,
+                        help="Exact death X and Z coordinates"
+                            " to salvage dropped items.")
 
     return parser.parse_args(args)
 
@@ -158,8 +168,86 @@ def stack_item(item, stacks):
         stacks.append(item)
 
 
-def main(argv=None):
+class Position(object):
+    @classmethod
+    def from_xz(cls, x, z):
+        pos = cls()
+        pos.coords = (x, z, 0)
+        return pos
 
+    def __init__(self, entity=None):
+        if entity is not None:
+            self.coords = tuple(entity["Pos"][_].value for _ in (0, 2, 1))
+
+    @property
+    def x(self):
+        return self.coords[0]
+
+    @property
+    def z(self):
+        return self.coords[1]
+
+    @property
+    def y(self):
+        return self.coords[2]
+
+    @property
+    def xz(self):
+        return self.coords[0:2]
+
+    def __str__(self):
+        return "(%5d, %5d, %3d)" % self.coords
+
+
+class Inventory(object):
+    _armorslots = {i: 103 - ((i - 298) % 4) for i in xrange(298, 318)}
+
+    def __init__(self, player):
+        self.inventory = player["Inventory"]
+
+        if len(self.inventory) == 40:  # shortcut for full inventory
+            self.free_slots = []
+        else:
+            self.free_slots = range(36) + range(100, 104)
+            for item in self.inventory:
+                self.free_slots.remove(item["Slot"].value)
+
+    def stack_item(self, item, partial=True, armor=True):
+        pass #return remainder(int), counts(list of ints), slots(list of ints)
+
+    def add_item(self, item, wear_armor=True, clone=True):
+        """Add an item or its clone to a free inventory slot
+            Return the used slot space, if any, or raise ValueError
+        """
+        from pymctoolslib.pymclevel import nbt
+
+        # shortcut for full inventory
+        if not self.free_slots:
+            raise ValueError("No free inventory slot to add %s" % item)
+
+        # Get a free slot from the list
+        # For armor, try to wear it in its corresponding slot
+        if wear_armor:
+            slot = self._armorslots.get(item.id, None)
+            if slot in self.free_slots:
+                self.free_slots.remove(slot)
+            else:
+                # Not an armor, or armor slot is not free
+                slot = self.free_slots.pop(0)
+        else:
+            slot = self.free_slots.pop(0)
+
+        # Add the item
+        itemnbt = item.nbt
+        if clone:
+            itemnbt = copy.deepcopy(itemnbt)
+        itemnbt["Slot"] = nbt.TAG_Byte(slot)
+        self.inventory.append(itemnbt)
+
+        return slot
+
+
+def main(argv=None):
     args = parseargs(argv)
     setuplogging(args.loglevel)
     log.debug(args)
@@ -176,50 +264,66 @@ def main(argv=None):
         log.error(e)
         return
 
-    items  = []
-    equips = []
-    xporbs = []
+    log.info("Determining '%s' death coordinates in world '%s' [%s]",
+             args.player, world.LevelName, world.filename)
 
-    xavg = zavg = 0
+    if args.deathpos:
+        deathpos = Position.from_xz(*args.deathpos)
+        log.info("Death coordinates specified at %s", deathpos.xz)
 
-    log.info("Reading '%s' chunk data from '%s'",
-             world.LevelName, world.filename)
-    log.debug("(%5s, %5s, %3s)\t%4s\t%3s %s", "X", "Z", "Y", "Age", "Qtd", "Item")
+    elif player["Health"].value == 0 and player["DeathTime"].value > 0:
+        deathpos = Position(player)
+        log.info("Player is currently dead at %s", deathpos)
 
-    for chunk in mc.iter_chunks(world, args.xpos, args.zpos, args.radius,
-                                args.loglevel == logging.INFO):
+    elif False: # XP Orbs center, named item, etc...
+        pass
+
+    else:
+        log.error("Could not determine player death coordinates")
+        return
+
+    inventory = Inventory(player)
+
+    for chunk in mc.iter_chunks(world, deathpos.x, deathpos.z, 10, False):
         dirtychunk = False
-        for entity in chunk.Entities:
-            if entity["id"].value == "Item" and entity["Age"].value < 6000:
-                log.debug("(%5d, %5d, %3d)\t%4d\t%3d %s" % (
-                   entity["Pos"][0].value,
-                   entity["Pos"][2].value,
-                   entity["Pos"][1].value,
+        for idx, entity in enumerate(chunk.Entities):
+            pos = Position(entity)
+
+            if entity["id"].value == "Item":
+                item = mc.Item(entity["Item"])
+                log.debug("%s\t%4d\t%s" % (
+                   pos,
                    entity["Age"].value,
-                   entity["Item"]["Count"].value,
-                   mc.item_name(entity["Item"]),
+                   item.description,
                 ))
-                items.append(entity)
+                try:
+                    slot = inventory.add_item(item)
+                    log.info("Added to inventory [slot %3d]: %s" % (
+                        slot, item.description
+                    ))
+                except ValueError as e:
+                    log.error(e)
+
+                # ID, chunk, entity, item, index
+                #yield ITEM, chunk, entity, entity["Item"], chunk, idx
 
                 # group with the list
-                stack_item(entity["Item"], items)
+                #stack_item(entity["Item"], items)
 
                 # Destroy the item
-                entity["Age"].value = 6000
-                entity["Health"].value = 0
-                dirtychunk = True
+                #entity["Age"].value = 6000
+                #entity["Health"].value = 0
+                #dirtychunk = True
 
             elif entity["id"].value == "XPOrb":
-                log.debug("(%5d, %5d, %3d)\t%4d\t%3d XP Orb" % (
-                   entity["Pos"][0].value,
-                   entity["Pos"][2].value,
-                   entity["Pos"][1].value,
+                log.debug("%s\t%4d\t%3d XP Orb" % (
+                   pos,
                    entity["Age"].value,
                    entity["Value"].value,
                 ))
-                xavg += entity["Pos"][0].value
-                zavg += entity["Pos"][2].value
-                xporbs.append(entity)
+#                 xavg += entity["Pos"][0].value
+#                 zavg += entity["Pos"][2].value
+#                 xporbs.append(entity)
 
             # For mobs that can pick up loot, assume their equipment is *your* loot ;)
             elif ("Equipment" in entity
@@ -238,7 +342,7 @@ def main(argv=None):
                                       entity["id"].value)
 
                         log.debug("%s%s", 37 * ' ', mc.item_name(equip))
-                        stack_item(equip, items)
+                        inventory.add_item(equip)
 
                         # Remove the equipment
                         entity["Equipment"][i] = nbt.TAG_Compound()
@@ -247,22 +351,10 @@ def main(argv=None):
         if dirtychunk:
             chunk.chunkChanged(calcLighting=False)
 
-    for _ in sorted(items, key=mc.get_itemkey):
-        pass
+#     for _ in sorted(items, key=mc.get_itemkey):
+#         pass
 
     #world.saveInPlace()
-
-
-def free_slots(inventory, armor=False):
-    if len(inventory) == 40:  # shortcut for full inventory
-        return []
-
-    slots = range(36) + (range(100, 104) if armor else [])
-    for item in inventory:
-        slot = item["Slot"].value
-        if slot in slots:
-            slots.remove(slot)
-    return slots
 
 
 
