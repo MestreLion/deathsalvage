@@ -17,7 +17,7 @@
 #    along with this program. See <http://www.gnu.org/licenses/gpl.html>
 
 # Installing requirements in Debian/Ubuntu:
-# ln -s /PATH/TO/pymclevel /PATH/TO/THIS/SCRIPT
+# ln -s /PATH/TO/pymctoolslib /PATH/TO/THIS/SCRIPT
 
 """Salvages dropped items after death back to Inventory
 
@@ -60,14 +60,11 @@ Ideas:
 import sys
 import os
 import os.path as osp
-import argparse
 import logging
 from xdg.BaseDirectory import xdg_cache_home
 import copy
-import time
 
-
-import progressbar
+import pymctoolslib as mc
 
 
 if __name__ == '__main__':
@@ -104,32 +101,16 @@ def setuplogging(level):
 
 
 def parseargs(args=None):
-    parser = argparse.ArgumentParser(
-        description="Recover all items dropped after death back to the player's inventory",)
+    parser = mc.basic_parser(
+        description="Recover all items dropped after death"
+                    " back to the player's inventory")
 
-    parser.add_argument('--quiet', '-q', dest='loglevel',
-                        const=logging.WARNING, default=logging.INFO,
-                        action="store_const",
-                        help="Suppress informative messages.")
+    for c in ("x", "z"):
+        parser.add_argument('--%spos' % c, '-%s' % c, dest='%spos' %c,
+                            default=None, type=int,
+                            help="Death %s coordinate"
+                                "to search for dropped items." % c.upper())
 
-    parser.add_argument('--verbose', '-v', dest='loglevel',
-                        const=logging.DEBUG,
-                        action="store_const",
-                        help="Verbose mode, output extra info.")
-
-    parser.add_argument('--world', '-w', default="newworld",
-                        help="Minecraft world, either its 'level.dat' file"
-                            " or a name under '~/.minecraft/saves' folder."
-                            " [Default: %(default)s]")
-
-    parser.add_argument('--player', '-p', default="Player",
-                        help="Player name."
-                            " [Default: %(default)s]")
-
-    parser.add_argument('--xpos', '-x', dest='xpos', default=None, type=int,
-                        help="Death X coordinate to search for dropped items.")
-    parser.add_argument('--zpos', '-z', dest='zpos', default=None, type=int,
-                        help="Death Z coordinate to search for dropped items.")
     parser.add_argument('--radius', '-r', dest='radius', default=250, type=int,
                         help="Radius of the search for items, centered on (X,Z)."
                             " Ignored if both --xpos and --zpos are not specified."
@@ -138,165 +119,13 @@ def parseargs(args=None):
     return parser.parse_args(args)
 
 
-def load_world(name):
-    import pymclevel  # takes a long time, so only imported after argparse
-    if isinstance(name, pymclevel.MCLevel):
-        return name
-
-    try:
-        if osp.isfile(name):
-            return pymclevel.fromFile(name)
-        else:
-            return pymclevel.loadWorld(name)
-    except IOError as e:
-        raise PyMCLevelError(e)
-    except pymclevel.mclevel.LoadingError:
-        raise PyMCLevelError("Not a valid Minecraft world: '%s'" % name)
-
-
-def get_player(world, playername=None):
-    import pymclevel
-    if playername is None:
-        playername = "Player"
-    try:
-        return world.getPlayerTag(playername)
-    except pymclevel.PlayerNotFound:
-        raise PyMCLevelError("Player not found in world '%s': %s" %
-                             (world.LevelName, playername))
-
-
-_ItemTypes = None
-def item_type(item):
-    '''Wrapper to pymclevel Items.findItem() with corrected data'''
-    global _ItemTypes
-    if _ItemTypes is None:
-        from pymclevel.items import items as ItemTypes
-
-        for itemid, maxdamage in ((298,  56),  # Leather Cap
-                                  (299,  81),  # Leather_Tunic
-                                  (300,  76),  # Leather_Pants
-                                  (301,  66),  # Leather_Boots
-                                  (302, 166),  # Chainmail_Helmet
-                                  (303, 241),  # Chainmail_Chestplate
-                                  (304, 226),  # Chainmail_Leggings
-                                  (305, 196),  # Chainmail_Boots
-                                  (306, 166),  # Iron_Helmet
-                                  (307, 241),  # Iron_Chestplate
-                                  (308, 226),  # Iron_Leggings
-                                  (309, 196),  # Iron_Boots
-                                  (310, 364),  # Diamond_Helmet
-                                  (311, 529),  # Diamond_Chestplate
-                                  (312, 496),  # Diamond_Leggings
-                                  (313, 430),  # Diamond_Boots
-                                  (314,  78),  # Golden_Helmet
-                                  (315,  87),  # Golden_Chestplate
-                                  (316,  76),  # Golden_Leggings
-                                  (317,  66),  # Golden_Boots
-                                  ):
-            ItemTypes.findItem(itemid).maxdamage = maxdamage - 1
-
-        for itemid, stacksize in ((58,  64),  # Workbench (Crafting Table)
-                                  (116, 64),  # Enchantment Table
-                                  (281, 64),  # Bowl
-                                  (282,  1),  # Mushroom Stew
-                                  (324,  1),  # Wooden Door
-                                  (337, 64),  # Clay (Ball)
-                                  (344, 16),  # Egg
-                                  (345, 64),  # Compass
-                                  (347, 64),  # Clock
-                                  (368, 16),  # Ender Pearl
-                                  (379, 64),  # Brewing Stand
-                                  (380, 64),  # Cauldron
-                                  (395, 64),  # Empty Map
-                                  ):
-            ItemTypes.findItem(itemid).stacksize = stacksize
-        for itemtype in ItemTypes.itemtypes.itervalues():
-            if itemtype.maxdamage is not None:
-                itemtype.stacksize = 1
-        _ItemTypes = ItemTypes
-
-    return _ItemTypes.findItem(item["id"].value,
-                               item["Damage"].value)
-
-
-def item_name(item, itemtype=None):
-    itemtype = itemtype or item_type(item)
-    if 'tag' in item and 'display' in item['tag']:
-        return "%s [%s]" % (item['tag']['display']['Name'].value,
-                            itemtype.name)
-    else:
-        return itemtype.name
-
-
-def get_itemkey(item):
-    return (item["id"].value,
-            item["Damage"].value)
-
-
-def get_chunks(world, x=None, z=None, radius=250):
-    from pymclevel import box
-
-    if x is None and z is None:
-        return world.chunkCount, world.allChunks
-
-    ox = world.bounds.minx if x is None else x - radius
-    oz = world.bounds.minz if z is None else z - radius
-
-    bounds = box.BoundingBox((ox, 0, oz),
-                             (2 * radius, world.Height,
-                              2 * radius))
-
-    return bounds.chunkCount, bounds.chunkPositions
-
-
-def iter_chunks(world, x=None, z=None, radius=250, progress=True):
-
-    chunk_max, chunk_range = get_chunks(world, x, z, radius)
-
-    if chunk_max <= 0:
-        log.warn("No chunks found in range %d of (%d, %d)",
-                 radius, x, z)
-        return
-
-    if progress:
-        pbar = progressbar.ProgressBar(widgets=[' ', progressbar.Percentage(),
-                                                ' Chunk ',
-                                                     progressbar.SimpleProgress(),
-                                                ' ', progressbar.Bar('.'),
-                                                ' ', progressbar.ETA(), ' '],
-                                       maxval=chunk_max).start()
-    start = time.clock()
-    chunk_count = 0
-
-    for cx, cz in chunk_range:
-        if not world.containsChunk(cx, cz):
-            continue
-
-        chunk = world.getChunk(cx, cz)
-        chunk_count += 1
-
-        yield chunk
-
-        if progress:
-            pbar.update(pbar.currval+1)
-
-    if progress:
-        pbar.finish()
-
-    log.info("Data from %d chunks%s extracted in %.2f seconds",
-             chunk_count,
-             (" (out of %d requested)" %  chunk_max)
-                if chunk_max > chunk_count else "",
-             time.clock()-start)
-
-
 def stack_item(item, stacks):
     '''Append an item to a list, trying to stack with other items
         respecting item's max stack size
         Raises ValueError if item count >= max stack size
     '''
-    key = get_itemkey(item)
-    size = item_type(item).stacksize
+    key = mc.get_itemkey(item)
+    size = mc.item_type(item).stacksize
     count = item["Count"].value
 
     # Assertion
@@ -310,7 +139,7 @@ def stack_item(item, stacks):
         return
 
     for stack in stacks:
-        if get_itemkey(stack) == key and stack["Count"].value < size:
+        if mc.get_itemkey(stack) == key and stack["Count"].value < size:
             total = stack["Count"].value + count
 
             # Stack item onto another, fully absorbing it
@@ -335,15 +164,15 @@ def main(argv=None):
     setuplogging(args.loglevel)
     log.debug(args)
 
-    from pymclevel import nbt
+    from pymctoolslib.pymclevel import nbt
 
     try:
-        world = load_world(args.world)
-        player = get_player(world, args.player)
+        world = mc.load_world(args.world)
+        player = mc.get_player(world, args.player)
         if not player["Dimension"].value == 0:  # 0 = Overworld
             world = world.getDimension(player["Dimension"].value)
 
-    except (PyMCLevelError, LookupError, IOError) as e:
+    except mc.MCError as e:
         log.error(e)
         return
 
@@ -357,8 +186,8 @@ def main(argv=None):
              world.LevelName, world.filename)
     log.debug("(%5s, %5s, %3s)\t%4s\t%3s %s", "X", "Z", "Y", "Age", "Qtd", "Item")
 
-    for chunk in iter_chunks(world, args.xpos, args.zpos, args.radius,
-                             args.loglevel == logging.INFO):
+    for chunk in mc.iter_chunks(world, args.xpos, args.zpos, args.radius,
+                                args.loglevel == logging.INFO):
         dirtychunk = False
         for entity in chunk.Entities:
             if entity["id"].value == "Item" and entity["Age"].value < 6000:
@@ -368,7 +197,7 @@ def main(argv=None):
                    entity["Pos"][1].value,
                    entity["Age"].value,
                    entity["Item"]["Count"].value,
-                   item_name(entity["Item"]),
+                   mc.item_name(entity["Item"]),
                 ))
                 items.append(entity)
 
@@ -408,7 +237,7 @@ def main(argv=None):
                                       entity["Pos"][1].value,
                                       entity["id"].value)
 
-                        log.debug("%s%s", 37 * ' ', item_name(equip))
+                        log.debug("%s%s", 37 * ' ', mc.item_name(equip))
                         stack_item(equip, items)
 
                         # Remove the equipment
@@ -418,14 +247,10 @@ def main(argv=None):
         if dirtychunk:
             chunk.chunkChanged(calcLighting=False)
 
-    for _ in sorted(items, key=get_itemkey):
+    for _ in sorted(items, key=mc.get_itemkey):
         pass
 
     #world.saveInPlace()
-
-
-class PyMCLevelError(Exception):
-    pass
 
 
 def free_slots(inventory, armor=False):
