@@ -22,13 +22,6 @@
 """Salvages dropped items after death back to Inventory
 
 Ideas:
-- class Inventory(object)
-    def init(player)
-    def stack_item(item, partial=True, armor=True)
-        return remainder(int), counts(list of ints), slots(list of ints)
-    def add_item(item, armor=True)
-        return slot
-
 - for i, entity in enumerate(list(entities)):
     if item:
         remainder, counts, _ = inventory.stack_item(item...)
@@ -124,45 +117,6 @@ def parseargs(args=None):
     return parser.parse_args(args)
 
 
-def stack_item(item, stacks):
-    '''Append an item to a list, trying to stack with other items
-        respecting item's max stack size
-        Raises ValueError if item count >= max stack size
-    '''
-    key = mc.get_itemkey(item)
-    size = mc.item_type(item).stacksize
-    count = item["Count"].value
-
-    # Assertion
-    if count > size:
-        raise ValueError("Item count is greater than max stack size (%d/%d): %s"
-                         % (count, size, item))
-
-    # Shortcut for fully stacked items (and 1-stack items like tools, armor, weapons)
-    if count == size:
-        stacks.append(copy.deepcopy(item))
-        return
-
-    for stack in stacks:
-        if mc.get_itemkey(stack) == key and stack["Count"].value < size:
-            total = stack["Count"].value + count
-
-            # Stack item onto another, fully absorbing it
-            if total <= size:
-                stack["Count"].value = total
-                return
-
-            # Stack item onto another, max stack
-            stack["Count"].value = size
-            count = total - size
-            break
-
-    if count > 0:
-        item = copy.deepcopy(item)
-        item["Count"].value = count
-        stacks.append(item)
-
-
 class Position(object):
     @classmethod
     def from_xz(cls, x, z):
@@ -194,43 +148,109 @@ class Position(object):
         return "(%5d, %5d, %3d)" % self.coords
 
 
+MIN_ARMOR = min(mc.Item.armor_ids)
 class Inventory(object):
-    _armorslots = {i: 103 - ((i - 298) % 4) for i in xrange(298, 318)}
+    _armorslots = {_: 103 - ((_ - MIN_ARMOR) % 4)
+                   for _ in mc.Item.armor_ids}
 
     def __init__(self, player):
         self.inventory = player["Inventory"]
 
         if len(self.inventory) == 40:  # shortcut for full inventory
             self.free_slots = []
+            self.free_armor = []
         else:
-            self.free_slots = range(36) + range(100, 104)
-            for item in self.inventory:
-                self.free_slots.remove(item["Slot"].value)
+            slots = set(_["Slot"].value for _ in self.inventory)
+            self.free_slots = sorted(set(range(36))       - slots)
+            self.free_armor = sorted(set(range(100, 104)) - slots)
 
-    def stack_item(self, item, partial=True, armor=True):
-        pass #return remainder(int), counts(list of ints), slots(list of ints)
+    def stack_item(self, item, wear_armor=True):
+        '''Add an item clone to the inventory, trying to stack it with other
+            items according to item's max stack size. Original item is never
+            changed.
+            Raises ValueError if item count is zero or is than max stack size.
+            Return a 3-tuple (count_remaining, [slots, ...], [counts, ...])
+        '''
+        item = mc.Item(copy.deepcopy(item.nbt))
+
+        size = item.type.stacksize
+        count = item.count  # item.count will not be changed until fully stacked
+
+        # Assertions
+        if count == 0:
+            raise ValueError("Item count is zero: %s" % item)
+
+        if count > size:
+            raise ValueError(
+                "Item count is greater than max stack size (%d/%d): %s" %
+                (count, size, item))
+
+        # Shortcut 1-stack items like tools, armor, weapons, etc
+        if size == 1:
+            try:
+                return 0, [self.add_item(item, wear_armor, clone=True)], [1]
+            except mc.MCError:
+                return count, [], []
+
+        # Loop each inventory slot, stacking the item onto similar items
+        # that are not maximized until item count is 0
+        slots  = []
+        counts = []
+        for stack in self.inventory:
+            stack = mc.Item(stack)
+            if (stack.key == item.key and
+                stack.name == item.name and  # avoid stacking named items
+                stack.count < size):
+
+                total = stack.count + count
+                diff = min(size, total) - stack.count
+                stack.nbt["Count"].value += diff
+                count                    -= diff
+
+                slots.append(stack["Slot"])
+                counts.append(diff)
+
+                if count == 0:
+                    break
+
+        if count > 0:
+            item.nbt["Count"].value = count
+            try:
+                slots.append(self.add_item(item, wear_armor, clone=False))
+                counts.append(count)
+                count = 0
+            except mc.MCError:
+                pass
+
+        return count, slots, counts
 
     def add_item(self, item, wear_armor=True, clone=True):
-        """Add an item or its clone to a free inventory slot
-            Return the used slot space, if any, or raise ValueError
+        """Add an item (or a clone) to a free inventory slot.
+            Return the used slot space, if any, or raise mc.MCError
         """
         from pymctoolslib.pymclevel import nbt
+        e = mc.MCError("No suitable free inventory slot to add %s" %
+                       item.description)
 
-        # shortcut for full inventory
-        if not self.free_slots:
-            raise ValueError("No free inventory slot to add %s" %
-                             item.description)
+        # shortcut for no free slots
+        if not self.free_slots and not self.free_armor:
+            raise e
 
-        # Get a free slot from the list
-        # For armor, try to wear it in its corresponding slot
-        if wear_armor:
-            slot = self._armorslots.get(item.id, None)
-            if slot in self.free_slots:
-                self.free_slots.remove(slot)
+        # Get a free slot suitable for the item
+        # For armor, try to wear in its corresponding slot
+        slot = None
+        if wear_armor and item.is_armor:
+            slot = self._armorslots[item.id]
+            if slot in self.free_armor:
+                self.free_armor.remove(slot)
             else:
-                # Not an armor, or armor slot is not free
-                slot = self.free_slots.pop(0)
-        else:
+                # Corresponding armor slot is not free
+                slot = None
+
+        if slot is None:
+            if not self.free_slots:
+                raise e
+
             slot = self.free_slots.pop(0)
 
         # Add the item
@@ -337,18 +357,38 @@ def main(argv=None):
                 item = mc.Item(entity["Item"])
 
                 # Stack the item to inventory
-                try:
-                    slot = inventory.add_item(item)
-                except ValueError as e:
-                    log.warning(e)
-                    continue
+                remaining, slots, counts = inventory.stack_item(item)
 
-                log.info("Added to inventory [slot %3d]: %s",
-                         slot, item.description)
+                if slots:
+                    if len(slots) == 1:
+                        # added in a single slot
+                        log.info("Added to inventory [slot %3d]: %s",
+                                 slots[0], item.description)
 
-                # Mark the entity for removal
-                # Must not pop the entity yet while iterating over the list
-                removal.add(idx)
+                    else:
+                        # multiple slots
+                        item.count = sum(counts)
+                        log.info("Added to inventory [slots %s]: %s",
+                                 ", ".join(str(_) for _ in slots),
+                                 item.description)
+
+                    if remaining == 0:
+                        # Fully added, mark the entity for removal
+                        # Must not pop the entity while iterating over the list
+                        removal.add(idx)
+
+                    else:
+                        # Partially added
+                        dirtychunk = True
+                        item.count = remaining
+                        log.warn("No suitable free inventory slot to add %s" %
+                                 item.description)
+
+                else:
+                    # not added at all
+                    log.warn("No suitable free inventory slot to add %s" %
+                             item.description)
+
 
             elif entity["id"].value == "XPOrb":
                 # Absorb it
