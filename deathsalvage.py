@@ -75,11 +75,6 @@ else:
 log = logging.getLogger(myname)
 
 
-ITEM  = 1
-XPORB = 2
-EQUIP = 3
-
-
 def setuplogging(level):
     # Console output
     for logger, lvl in [(log, level),
@@ -223,7 +218,8 @@ class Inventory(object):
 
         # shortcut for full inventory
         if not self.free_slots:
-            raise ValueError("No free inventory slot to add %s" % item)
+            raise ValueError("No free inventory slot to add %s" %
+                             item.description)
 
         # Get a free slot from the list
         # For armor, try to wear it in its corresponding slot
@@ -247,6 +243,22 @@ class Inventory(object):
         return slot
 
 
+def iter_mob_loot(entity):
+    if not ("Equipment" in entity
+            and "CanPickUpLoot" in entity
+            and entity["CanPickUpLoot"].value == 1):
+        return
+
+    for i, equip in enumerate(entity["Equipment"]):
+        if len(equip) == 0:  # blank equipment slot
+            continue
+
+        if (entity["id"].value == "PigZombie" and
+            equip["id"].value == 283):  # Golden Sword:
+            continue
+
+        yield i, mc.Item(equip)
+
 def main(argv=None):
     args = parseargs(argv)
     setuplogging(args.loglevel)
@@ -267,92 +279,102 @@ def main(argv=None):
     log.info("Determining '%s' death coordinates in world '%s' [%s]",
              args.player, world.LevelName, world.filename)
 
-    if args.deathpos:
-        deathpos = Position.from_xz(*args.deathpos)
-        log.info("Death coordinates specified at %s", deathpos.xz)
-
-    elif player["Health"].value == 0 and player["DeathTime"].value > 0:
+    if player["Health"].value == 0 and player["DeathTime"].value > 0:
         deathpos = Position(player)
         log.info("Player is currently dead at %s", deathpos)
 
-    elif False: # XP Orbs center, named item, etc...
-        pass
+    elif args.deathpos:
+        deathpos = Position.from_xz(*args.deathpos)
+        log.info("Death coordinates specified at %s", deathpos.xz)
 
-    else:
+    else: # XP Orbs center, named item, etc...
+        searchpos = Position.from_xz(args.xpos, args.zpos)
+        log.info("Searching entities around %s with range %d",
+                 searchpos.xz, args.radius)
+        log.debug("(%5s, %5s, %3s)\t%4s\t%3s %s",
+                  "X", "Z", "Y", "Age", "Qtd", "Item")
+
+        for chunk in mc.iter_chunks(world, searchpos.x, searchpos.z, args.radius,
+                                    progress = args.loglevel==logging.INFO):
+            for entity in chunk.Entities:
+                pos = Position(entity)
+
+                if entity["id"].value == "Item":
+                    item = mc.Item(entity["Item"])
+                    log.debug("%s\t%4d\t%s" % (
+                       pos,
+                       entity["Age"].value,
+                       item.description,
+                    ))
+
+                elif entity["id"].value == "XPOrb":
+                    log.debug("%s\t%4d\t   XP Orb worth %3d XP" % (
+                       pos,
+                       entity["Age"].value,
+                       entity["Value"].value,
+                    ))
+
+                for i, (idx, equip) in enumerate(iter_mob_loot(entity)):
+                    if i == 0:  # first "interesting" equipment item
+                        log.debug("%s %s equipped with:",
+                                  pos, entity["id"].value)
+                    log.debug("%s%s", 33 * ' ', equip.description)
+
         log.error("Could not determine player death coordinates")
         return
 
     inventory = Inventory(player)
 
-    for chunk in mc.iter_chunks(world, deathpos.x, deathpos.z, 10, False):
+    for chunk in mc.iter_chunks(world, deathpos.x, deathpos.z, 10,
+                                progress=False):
         dirtychunk = False
+        removal = set()
+
         for idx, entity in enumerate(chunk.Entities):
             pos = Position(entity)
 
             if entity["id"].value == "Item":
                 item = mc.Item(entity["Item"])
-                log.debug("%s\t%4d\t%s" % (
-                   pos,
-                   entity["Age"].value,
-                   item.description,
-                ))
+
+                # Stack the item to inventory
                 try:
                     slot = inventory.add_item(item)
-                    log.info("Added to inventory [slot %3d]: %s" % (
-                        slot, item.description
-                    ))
                 except ValueError as e:
-                    log.error(e)
+                    log.warning(e)
+                    continue
 
-                # ID, chunk, entity, item, index
-                #yield ITEM, chunk, entity, entity["Item"], chunk, idx
+                log.info("Added to inventory [slot %3d]: %s",
+                         slot, item.description)
 
-                # group with the list
-                #stack_item(entity["Item"], items)
-
-                # Destroy the item
-                #entity["Age"].value = 6000
-                #entity["Health"].value = 0
-                #dirtychunk = True
+                # Mark the entity for removal
+                # Must not pop the entity yet while iterating over the list
+                removal.add(idx)
 
             elif entity["id"].value == "XPOrb":
-                log.debug("%s\t%4d\t%3d XP Orb" % (
-                   pos,
-                   entity["Age"].value,
-                   entity["Value"].value,
-                ))
-#                 xavg += entity["Pos"][0].value
-#                 zavg += entity["Pos"][2].value
-#                 xporbs.append(entity)
+                # Absorb it
+                pass
 
-            # For mobs that can pick up loot, assume their equipment is *your* loot ;)
-            elif ("Equipment" in entity
-                  and "CanPickUpLoot" in entity
-                  and entity["CanPickUpLoot"].value == 1):
-                firstequip = True
-                for i, equip in enumerate(entity["Equipment"]):
-                    if len(equip) > 0 and not (entity["id"].value == "PigZombie" and
-                                               equip["id"].value == 283):  # Golden Sword:
-                        if firstequip:
-                            firstequip = False
-                            log.debug("(%5d, %5d, %3d) %s equipped with:",
-                                      entity["Pos"][0].value,
-                                      entity["Pos"][2].value,
-                                      entity["Pos"][1].value,
-                                      entity["id"].value)
+            # For mobs that can pick up loot,
+            # assume their non-ordinary equipment is *your* loot ;)
+            for i, equip in iter_mob_loot(entity):
+                try:
+                    slot = inventory.add_item(equip)
+                except ValueError as e:
+                    log.error(e)
+                    continue
 
-                        log.debug("%s%s", 37 * ' ', mc.item_name(equip))
-                        inventory.add_item(equip)
+                # Remove the equipment
+                entity["Equipment"][i] = nbt.TAG_Compound()
+                dirtychunk = True
 
-                        # Remove the equipment
-                        entity["Equipment"][i] = nbt.TAG_Compound()
-                        dirtychunk = True
+        if removal:
+            dirtychunk = True
+            chunk.Entities[:] = (entity
+                                 for idx, entity in enumerate(chunk.Entities)
+                                 if idx not in removal)
 
         if dirtychunk:
             chunk.chunkChanged(calcLighting=False)
-
-#     for _ in sorted(items, key=mc.get_itemkey):
-#         pass
 
     #world.saveInPlace()
 
