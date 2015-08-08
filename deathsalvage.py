@@ -297,7 +297,12 @@ def main(argv=None):
 
     if player["Health"].value == 0 and player["DeathTime"].value > 0:
         deathpos = Position(player)
-        log.info("Player is currently dead at %s", deathpos)
+        log.warn("Player is currently dead at %s", deathpos)
+        log.warn("Not salvaging items, as inventory is cleared after respawn")
+        log.warn("Enter the game, respawn, save and quit, then run this again"
+                 " with argument '--death-xz %d %d'",
+                 deathpos.x, deathpos.z)
+        return
 
     elif args.deathpos:
         deathpos = Position.from_xz(*args.deathpos)
