@@ -39,7 +39,7 @@ Ideas:
         else:
             fail[item.key] = fail.setdefault(item.key, 0) + 1
 
-- No such thing as full inventory: may fail for one item and succeed the next
+- Add to Ender Chest (if --ender-chest/-e) when no space in regular inventory
 
 - Final report:
     - Inventory after salvage
@@ -174,7 +174,7 @@ class Inventory(object):
         item = mc.Item(copy.deepcopy(item.nbt))
 
         size = item.type.stacksize
-        count = item.count  # item.count will not be changed until fully stacked
+        count = item["Count"]  # item.count will not be changed until fully stacked
 
         # Assertions
         if count == 0:
@@ -188,41 +188,39 @@ class Inventory(object):
         # Shortcut 1-stack items like tools, armor, weapons, etc
         if size == 1:
             try:
-                return 0, [self.add_item(item, wear_armor, clone=True)], [1]
+                return 0, [(self.add_item(item, wear_armor, clone=True), 1)]
             except mc.MCError:
-                return count, [], []
+                return count, []
 
         # Loop each inventory slot, stacking the item onto similar items
         # that are not maximized until item count is 0
         slots  = []
-        counts = []
         for stack in self.inventory:
             stack = mc.Item(stack)
             if (stack.key == item.key and
                 stack.name == item.name and  # avoid stacking named items
-                stack.count < size):
+                stack["Count"] < size):
 
-                total = stack.count + count
-                diff = min(size, total) - stack.count
-                stack.nbt["Count"].value += diff
-                count                    -= diff
+                total = stack["Count"] + count
+                diff = min(size, total) - stack["Count"]
+                stack["Count"] += diff
+                count          -= diff
 
-                slots.append(stack["Slot"])
-                counts.append(diff)
+                slots.append((stack["Slot"], diff))
 
                 if count == 0:
                     break
 
         if count > 0:
-            item.nbt["Count"].value = count
+            item["Count"] = count
             try:
-                slots.append(self.add_item(item, wear_armor, clone=False))
-                counts.append(count)
+                slots.append((self.add_item(item, wear_armor, clone=False),
+                              count))
                 count = 0
             except mc.MCError:
                 pass
 
-        return count, slots, counts
+        return count, slots
 
     def add_item(self, item, wear_armor=True, clone=True):
         """Add an item (or a clone) to a free inventory slot.
@@ -240,7 +238,7 @@ class Inventory(object):
         # For armor, try to wear in its corresponding slot
         slot = None
         if wear_armor and item.is_armor:
-            slot = self._armorslots[item.id]
+            slot = self._armorslots[item["id"]]
             if slot in self.free_armor:
                 self.free_armor.remove(slot)
             else:
@@ -286,15 +284,7 @@ def main(argv=None):
 
     from pymctoolslib.pymclevel import nbt
 
-    try:
-        world = mc.load_world(args.world)
-        player = mc.get_player(world, args.player)
-        if not player["Dimension"].value == 0:  # 0 = Overworld
-            world = world.getDimension(player["Dimension"].value)
-
-    except mc.MCError as e:
-        log.error(e)
-        return
+    world, player = mc.load_player_dimension(args.world, args.player)
 
     log.info("Determining '%s' death coordinates in world '%s' [%s]",
              args.player, world.LevelName, world.filename)
@@ -357,38 +347,25 @@ def main(argv=None):
                 item = mc.Item(entity["Item"])
 
                 # Stack the item to inventory
-                remaining, slots, counts = inventory.stack_item(item)
+                remaining, slots = inventory.stack_item(item)
 
-                if slots:
-                    if len(slots) == 1:
-                        # added in a single slot
-                        log.info("Added to inventory [slot %3d]: %s",
-                                 slots[0], item.description)
+                for slot, count in slots:
+                    log.info("Added to inventory [slot %3d]: %2d %s",
+                             slot, count, item.fullname)
 
-                    else:
-                        # multiple slots
-                        item.count = sum(counts)
-                        log.info("Added to inventory [slots %s]: %s",
-                                 ", ".join(str(_) for _ in slots),
-                                 item.description)
-
-                    if remaining == 0:
-                        # Fully added, mark the entity for removal
-                        # Must not pop the entity while iterating over the list
-                        removal.add(idx)
-
-                    else:
-                        # Partially added
-                        dirtychunk = True
-                        item.count = remaining
-                        log.warn("No suitable free inventory slot to add %s" %
-                                 item.description)
+                if remaining == 0:
+                    # Fully added, mark the entity for removal
+                    # Must not pop the entity while iterating over the list
+                    removal.add(idx)
 
                 else:
-                    # not added at all
-                    log.warn("No suitable free inventory slot to add %s" %
-                             item.description)
+                    log.warn("No suitable free inventory slot to add: %2d %s",
+                             remaining, item.fullname)
 
+                    if not slots:
+                        # Partially added
+                        dirtychunk = True
+                        item["Count"] = remaining
 
             elif entity["id"].value == "XPOrb":
                 # Absorb it
@@ -399,7 +376,9 @@ def main(argv=None):
             for i, equip in iter_mob_loot(entity):
                 try:
                     slot = inventory.add_item(equip)
-                except ValueError as e:
+                    log.info("Added to inventory [slot %3d]: %s",
+                             slot, equip.fullname)
+                except mc.MCError as e:
                     log.error(e)
                     continue
 
@@ -424,6 +403,9 @@ def main(argv=None):
 if __name__ == '__main__':
     try:
         sys.exit(main())
+    except mc.MCError as e:
+        log.error(e)
+        sys.exit(1)
     except Exception as e:
         log.critical(e, exc_info=True)
         sys.exit(1)
