@@ -114,6 +114,11 @@ def parseargs(args=None):
                         help="Exact death X and Z coordinates"
                             " to salvage dropped items.")
 
+    parser.add_argument('--apply', '-a', dest='apply',
+                        default=False,
+                        action="store_true",
+                        help="Apply changes.")
+
     return parser.parse_args(args)
 
 
@@ -277,6 +282,7 @@ def iter_mob_loot(entity):
 
         yield i, mc.Item(equip)
 
+
 def main(argv=None):
     args = parseargs(argv)
     setuplogging(args.loglevel)
@@ -395,7 +401,11 @@ def main(argv=None):
         if dirtychunk:
             chunk.chunkChanged(calcLighting=False)
 
-    #world.saveInPlace()
+    if args.apply:
+        log.info("Applying changes and saving world...")
+        world.saveInPlace()
+    else:
+        log.warn("Not saving world, use --apply to apply changes")
 
 
 
