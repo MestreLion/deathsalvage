@@ -68,6 +68,11 @@ else:
 log = logging.getLogger(myname)
 
 
+# Sword, Tools (including Hoe), Armor
+DIAMOND_ITEMS = set(range(276, 280) + [293] + range(310, 314))
+MIN_ARMOR = min(mc.Item.armor_ids)
+
+
 def setuplogging(level):
     # Console output
     for logger, lvl in [(log, level),
@@ -153,7 +158,6 @@ class Position(object):
         return "(%5d, %5d, %3d)" % self.coords
 
 
-MIN_ARMOR = min(mc.Item.armor_ids)
 class Inventory(object):
     _armorslots = {_: 103 - ((_ - MIN_ARMOR) % 4)
                    for _ in mc.Item.armor_ids}
@@ -266,7 +270,7 @@ class Inventory(object):
         return slot
 
 
-def iter_mob_loot(entity):
+def iter_mob_loot(entity, ordinary=False):
     if not ("Equipment" in entity
             and "CanPickUpLoot" in entity
             and entity["CanPickUpLoot"].value == 1):
@@ -276,9 +280,20 @@ def iter_mob_loot(entity):
         if len(equip) == 0:  # blank equipment slot
             continue
 
-        if (entity["id"].value == "PigZombie" and
-            equip["id"].value == 283):  # Golden Sword:
-            continue
+        # Do not list ordinary equipment unless requested
+        if not (ordinary or 'tag' in equip):
+
+            if (entity["id"].value == "Zombie" and
+                equip["id"].value not in DIAMOND_ITEMS):
+                continue
+
+            if (entity["id"].value == "PigZombie" and
+                equip["id"].value == 283):  # Golden Sword
+                continue
+
+            if (entity["id"].value == "Skeleton" and
+                equip["id"].value == 261):  # Bow
+                continue
 
         yield i, mc.Item(equip)
 
@@ -418,11 +433,12 @@ def main(argv=None):
             for i, equip in iter_mob_loot(entity):
                 try:
                     slot = inventory.add_item(equip)
-                    log.info("Added to inventory [slot %3d]: %s",
-                             slot, equip.fullname)
                 except mc.MCError as e:
-                    log.error(e)
+                    log.warn(e)
                     continue
+
+                log.info("%s      Added to inventory [slot %3d], from %s: %s",
+                         pos, slot, entity["id"].value, equip.fullname)
 
                 # Remove the equipment
                 entity["Equipment"][i] = nbt.TAG_Compound()
