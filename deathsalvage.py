@@ -22,22 +22,12 @@
 """Salvages dropped items after death back to Inventory
 
 Ideas:
-- for i, entity in enumerate(list(entities)):
-    if item:
-        remainder, counts, _ = inventory.stack_item(item...)
-        if counts:
-            dirty = True
-        if remainder == 0:
-            entities.pop(i)
-        else:
-            fail[item.key] = fail.setdefault(item.key, 0) + remainder
-    if mob:
-        for j, equip in enumerate(equipment)
-        slot = invetory.add_item(item...)
-        if slot:
-            equipment[j] = nbt.tag_compund()  # empty
-        else:
-            fail[item.key] = fail.setdefault(item.key, 0) + 1
+
+- Add items to category lists: Items, XPOrb, Mob Equip.
+    log.info() only at final report, log.debug() in loop
+
+- Add failed items to a dict, also for final report:
+    fail[item.id] = fail.setdefault(item.id, 0) + remainder
 
 - Add to Ender Chest (if --ender-chest/-e) when no space in regular inventory
 
@@ -45,9 +35,9 @@ Ideas:
     - Inventory after salvage
     - Failed items count
 
-- XPOrb absorb?
-- XPOrb as death location: set.add(chunk +0+0, -1-1, +1+1, -1+0, ...) 9 chunks
+- XP Absorb: 1 level every 7 XP, rounded up, as it happens on death
 
+- Update setuplogging(), move to pymctoolslib
 """
 
 import sys
