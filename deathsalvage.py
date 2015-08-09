@@ -56,7 +56,6 @@ import os.path as osp
 import logging
 from xdg.BaseDirectory import xdg_cache_home
 import copy
-import math
 
 import pymctoolslib as mc
 
@@ -286,41 +285,10 @@ def iter_mob_loot(entity):
 
 def xp_next(level):
     """Return the amount of XP needed to go from a level to the next one"""
+    # For Minecraft 1.8 (snapshot 14w02a) onwards: 2L+7; 5L-38; 9L-158
     if level <= 15: return 17
     if level <= 30: return 3 * level -  28  # == xpn(15)=17 + 3(L-15)
     else:           return 7 * level - 148  # == xpn(30)=62 + 7(L-30)
-
-
-def xp_total(level):
-    """Return the amount of XP needed to reach a level, starting from 0 XP
-        This is the the sum of xp_next()
-    """
-    # Direct formulas for XP Total:
-    #   17 * level
-    # + AP sum(a1=0; d=3; n=level-k, k1=15) = d/2 * n(n-1) = d/2 * (L-k)(L-k-1)
-    # + AP sum(a1=0; d=4; n=level-k, k2=30)
-    # = 17  * level
-    # + 1.5 * lk1 * (lk1 - 1), lk1 = max(0, level - 15)
-    # + 2.0 * lk2 * (lk2 - 1), lk2 = max(0, level - 30)
-    # =                                                     17   * level
-    # + d/2 * [ L^2 - (2k+1)L + k(k+1) ] = 1.5 * level^2 +  46.5 * level +  360
-    # +                                    2.0 * level^2 + 122   * level + 1860
-    # = if level < 15:                  17   * level
-    #   if level < 30: 1.5 * level^2 -  29.5 * level +  360
-    #   else:          3.5 * level^2 - 151.5 * level + 2220
-
-    if level <= 15: return                        17   * level
-    if level <= 30: return  int(1.5 * level**2 -  29.5 * level +  360)
-    else:           return  int(3.5 * level**2 - 151.5 * level + 2220)
-
-
-def xp_level(xp):
-    """Return the level reached by the given amount of XP, starting from 0
-        This is the inverse of xp_total()
-    """
-    if xp <= 272: return int(xp / 17.0)
-    if xp <= 887: return int(( 29.5 + math.sqrt( 6 * xp - 1289.75)) / 3.0)
-    else:         return int((151.5 + math.sqrt(14 * xp - 8127.75)) / 7.0)
 
 
 def add_xp(player, xp):
@@ -335,11 +303,6 @@ def add_xp(player, xp):
         xpp = (xpp - 1) * xp_next(level)
         level += 1
         xpp /= xp_next(level)
-
-    # Direct way, more suitable for big XP changes (10+ levels up)
-    # xpt = xp_total(level) + int(xpp * xp_next(level)) + xp
-    # level = xp_level(xpt)
-    # xpp = float(xpt - xp_total(level)) / xp_next(level)
 
     player["XpTotal"].value += xp
     player["Score"  ].value += xp
