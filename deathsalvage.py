@@ -56,6 +56,7 @@ import os.path as osp
 import logging
 from xdg.BaseDirectory import xdg_cache_home
 import copy
+import math
 
 import pymctoolslib as mc
 
@@ -283,6 +284,71 @@ def iter_mob_loot(entity):
         yield i, mc.Item(equip)
 
 
+def xp_next(level):
+    """Return the amount of XP needed to go from a level to the next one"""
+    if level <= 15: return 17
+    if level <= 30: return 3 * level -  28  # == xpn(15)=17 + 3(L-15)
+    else:           return 7 * level - 148  # == xpn(30)=62 + 7(L-30)
+
+
+def xp_total(level):
+    """Return the amount of XP needed to reach a level, starting from 0 XP
+        This is the the sum of xp_next()
+    """
+    # Direct formulas for XP Total:
+    #   17 * level
+    # + AP sum(a1=0; d=3; n=level-k, k1=15) = d/2 * n(n-1) = d/2 * (L-k)(L-k-1)
+    # + AP sum(a1=0; d=4; n=level-k, k2=30)
+    # = 17  * level
+    # + 1.5 * lk1 * (lk1 - 1), lk1 = max(0, level - 15)
+    # + 2.0 * lk2 * (lk2 - 1), lk2 = max(0, level - 30)
+    # =                                                     17   * level
+    # + d/2 * [ L^2 - (2k+1)L + k(k+1) ] = 1.5 * level^2 +  46.5 * level +  360
+    # +                                    2.0 * level^2 + 122   * level + 1860
+    # = if level < 15:                  17   * level
+    #   if level < 30: 1.5 * level^2 -  29.5 * level +  360
+    #   else:          3.5 * level^2 - 151.5 * level + 2220
+
+    if level <= 15: return                        17   * level
+    if level <= 30: return  int(1.5 * level**2 -  29.5 * level +  360)
+    else:           return  int(3.5 * level**2 - 151.5 * level + 2220)
+
+
+def xp_level(xp):
+    """Return the level reached by the given amount of XP, starting from 0
+        This is the inverse of xp_total()
+    """
+    if xp <= 272: return int(xp / 17.0)
+    if xp <= 887: return int(( 29.5 + math.sqrt( 6 * xp - 1289.75)) / 3.0)
+    else:         return int((151.5 + math.sqrt(14 * xp - 8127.75)) / 7.0)
+
+
+def add_xp(player, xp):
+    """Add an experience amount to a player, also affecting his score and
+        possibly gaining levels
+        Return the updated level and the percentage towards the next level
+    """
+    level, xpp = (player[_].value for _ in ("XpLevel", "XpP"))
+
+    xpp += float(xp) / xp_next(level)
+    while xpp >= 1:
+        xpp = (xpp - 1) * xp_next(level)
+        level += 1
+        xpp /= xp_next(level)
+
+    # Direct way, more suitable for big XP changes (10+ levels up)
+    # xpt = xp_total(level) + int(xpp * xp_next(level)) + xp
+    # level = xp_level(xpt)
+    # xpp = float(xpt - xp_total(level)) / xp_next(level)
+
+    player["XpTotal"].value += xp
+    player["Score"  ].value += xp
+    player["XpLevel"].value  = level
+    player["XpP"    ].value  = xpp
+
+    return level, xpp
+
+
 def main(argv=None):
     args = parseargs(argv)
     setuplogging(args.loglevel)
@@ -322,18 +388,18 @@ def main(argv=None):
 
                 if entity["id"].value == "Item":
                     item = mc.Item(entity["Item"])
-                    log.debug("%s\t%4d\t%s" % (
+                    log.debug("%s\t%4d\t%s",
                        pos,
                        entity["Age"].value,
                        item.description,
-                    ))
+                    )
 
                 elif entity["id"].value == "XPOrb":
-                    log.debug("%s\t%4d\t   XP Orb worth %3d XP" % (
+                    log.debug("%s\t%4d\t   XP Orb worth %3d XP",
                        pos,
                        entity["Age"].value,
                        entity["Value"].value,
-                    ))
+                    )
 
                 for i, (idx, equip) in enumerate(iter_mob_loot(entity)):
                     if i == 0:  # first "interesting" equipment item
@@ -361,8 +427,8 @@ def main(argv=None):
                 remaining, slots = inventory.stack_item(item)
 
                 for slot, count in slots:
-                    log.info("Added to inventory [slot %3d]: %2d %s",
-                             slot, count, item.fullname)
+                    log.info("%s %4d Added to inventory [slot %3d]: %2d %s",
+                             pos, entity["Age"].value, slot, count, item.fullname)
 
                 if remaining == 0:
                     # Fully added, mark the entity for removal
@@ -370,8 +436,8 @@ def main(argv=None):
                     removal.add(idx)
 
                 else:
-                    log.warn("No suitable free inventory slot to add: %2d %s",
-                             remaining, item.fullname)
+                    log.warn("%s %4d No suitable free inventory slot to add: %2d %s",
+                             pos, entity["Age"].value, remaining, item.fullname)
 
                     if not slots:
                         # Partially added
@@ -379,8 +445,10 @@ def main(argv=None):
                         item["Count"] = remaining
 
             elif entity["id"].value == "XPOrb":
-                # Absorb it
-                pass
+                log.info("%s %4d Absorbed XP Orb worth %3d XP, level %.2f",
+                         pos, entity["Age"].value, entity["Value"].value,
+                         sum(add_xp(player, entity["Value"].value)))
+                removal.add(idx)
 
             # For mobs that can pick up loot,
             # assume their non-ordinary equipment is *your* loot ;)
