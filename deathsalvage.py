@@ -378,6 +378,13 @@ def main(argv=None):
                        entity["Age"].value,
                        item.description,
                     )
+                    # Weight named and enchanted items as large size XP Orb
+                    if 'tag' in item:
+                        points.append(pos.coords + (37**2,))
+
+                    # Diamond items as medium size
+                    elif item["id"] in DIAMOND_ITEMS:
+                        points.append(pos.coords + (17**2,))
 
                 elif entity["id"].value == "XPOrb":
                     log.debug("%s\t%4d\t   XP Orb worth %3d XP",
@@ -394,8 +401,11 @@ def main(argv=None):
                     log.debug("%s%s", 33 * ' ', equip.description)
 
         if points:
+            log.debug("Interesting entities and weights to find death location:")
+            [log.debug("%s - %4d", Position.from_xzy(*_[:3]), _[-1])
+             for _ in points]
             deathpos = centroid(points)
-            log.info("XP Orbs centroid is %s, using it as death location",
+            log.info("Estimated death location is %s",
                      deathpos)
         else:
             log.error("Could not determine player death coordinates")
