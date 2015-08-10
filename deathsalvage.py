@@ -65,9 +65,12 @@ MIN_ARMOR = min(mc.Item.armor_ids)
 
 def setuplogging(level):
     # Console output
-    for logger, lvl in [(log, level),
-                        # pymclevel is too verbose
-                        (logging.getLogger("pymclevel"), logging.WARNING)]:
+    for logger, lvl in [
+            (log, level),
+            (logging.getLogger("pymctoolslib.pymctoolslib"), level),
+            # pymclevel is too verbose
+            (logging.getLogger("pymctoolslib.pymclevel"), logging.WARNING),
+    ]:
         sh = logging.StreamHandler()
         sh.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
         sh.setLevel(lvl)
