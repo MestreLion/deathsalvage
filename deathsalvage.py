@@ -46,6 +46,8 @@ import os.path as osp
 import logging
 from xdg.BaseDirectory import xdg_cache_home
 import copy
+import operator
+import itertools
 
 import pymctoolslib as mc
 
@@ -123,8 +125,12 @@ def parseargs(args=None):
 class Position(object):
     @classmethod
     def from_xz(cls, x, z):
+        return cls.from_xzy(x, z, 0)
+
+    @classmethod
+    def from_xzy(cls, x, z, y):
         pos = cls()
-        pos.coords = (x, z, 0)
+        pos.coords = (x, z, y)
         return pos
 
     def __init__(self, entity=None):
@@ -150,6 +156,12 @@ class Position(object):
     def __str__(self):
         return "(%5d, %5d, %3d)" % self.coords
 
+
+def centroid(points):
+    x, z, y, w = zip(*points)
+    l = sum(w)  # len(points)
+    return Position.from_xzy(*(sum(itertools.imap(operator.mul, _, w)) / l
+                               for _ in (x, z, y)))
 
 class Inventory(object):
     _armorslots = {_: 103 - ((_ - MIN_ARMOR) % 4)
@@ -347,10 +359,12 @@ def main(argv=None):
 
     else: # XP Orbs center, named item, etc...
         searchpos = Position.from_xz(args.xpos, args.zpos)
-        log.info("Searching entities around %s with range %d",
+        log.info("Searching entities around %s with radius %d",
                  searchpos.xz, args.radius)
-        log.debug("(%5s, %5s, %3s)\t%4s\t%3s %s",
-                  "X", "Z", "Y", "Age", "Qtd", "Item")
+        log.debug("(%5s, %5s, %3s)\t%4s\t%2s %s",
+                  "X", "Z", "Y", "Age", "Qt", "Item")
+
+        points = []
 
         for chunk in mc.iter_chunks(world, searchpos.x, searchpos.z, args.radius,
                                     progress = args.loglevel==logging.INFO):
@@ -371,6 +385,7 @@ def main(argv=None):
                        entity["Age"].value,
                        entity["Value"].value,
                     )
+                    points.append(pos.coords + (entity["Value"].value**2,))
 
                 for i, (idx, equip) in enumerate(iter_mob_loot(entity)):
                     if i == 0:  # first "interesting" equipment item
@@ -378,12 +393,17 @@ def main(argv=None):
                                   pos, entity["id"].value)
                     log.debug("%s%s", 33 * ' ', equip.description)
 
-        log.error("Could not determine player death coordinates")
-        return
+        if points:
+            deathpos = centroid(points)
+            log.info("XP Orbs centroid is %s, using it as death location",
+                     deathpos)
+        else:
+            log.error("Could not determine player death coordinates")
+            return
 
     inventory = Inventory(player)
 
-    for chunk in mc.iter_chunks(world, deathpos.x, deathpos.z, 10,
+    for chunk in mc.iter_chunks(world, deathpos.x, deathpos.z, 20,
                                 progress=False):
         dirtychunk = False
         removal = set()
