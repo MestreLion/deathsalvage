@@ -459,9 +459,9 @@ def main(argv=None):
 
         if removal:
             dirtychunk = True
-            chunk.Entities[:] = (entity
+            chunk.Entities[:] = [entity
                                  for idx, entity in enumerate(chunk.Entities)
-                                 if idx not in removal)
+                                 if idx not in removal]
 
         if dirtychunk:
             chunk.chunkChanged(calcLighting=False)
