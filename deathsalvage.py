@@ -332,6 +332,16 @@ def add_xp(player, xp):
     return level, xpp
 
 
+def add_item_weight(points, item, pos):
+    # Weight named and enchanted items as large size XP Orb
+    if 'tag' in item:
+        points.append(pos.coords + (37**2,))
+
+    # Diamond items as medium size
+    elif item["id"] in DIAMOND_ITEMS:
+        points.append(pos.coords + (17**2,))
+
+
 def main(argv=None):
     args = parseargs(argv)
     setuplogging(args.loglevel)
@@ -378,13 +388,7 @@ def main(argv=None):
                        entity["Age"].value,
                        item.description,
                     )
-                    # Weight named and enchanted items as large size XP Orb
-                    if 'tag' in item:
-                        points.append(pos.coords + (37**2,))
-
-                    # Diamond items as medium size
-                    elif item["id"] in DIAMOND_ITEMS:
-                        points.append(pos.coords + (17**2,))
+                    add_item_weight(points, item, pos)
 
                 elif entity["id"].value == "XPOrb":
                     log.debug("%s\t%4d\t   XP Orb worth %3d XP",
@@ -399,6 +403,7 @@ def main(argv=None):
                         log.debug("%s %s equipped with:",
                                   pos, entity["id"].value)
                     log.debug("%s%s", 33 * ' ', equip.description)
+                    add_item_weight(points, equip, pos)
 
         if points:
             log.debug("Interesting entities and weights to find death location:")
