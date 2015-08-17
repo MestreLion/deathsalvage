@@ -275,6 +275,23 @@ class Inventory(object):
         return slot
 
 
+def mob_name(entity):
+    eid = entity["id"].value
+
+    if eid == "Zombie":
+        if "IsVillager" in entity and entity["IsVillager"].value == 1:
+            return "Zombie Villager"
+
+    if eid == "PigZombie":
+        return "Zombie Pigman"
+
+    if eid == "Skeleton":
+        if entity["SkeletonType"].value == 1:
+            return "Wither Skeleton"
+
+    return eid
+
+
 def iter_mob_loot(entity, ordinary=False):
     if not ("Equipment" in entity
             and "CanPickUpLoot" in entity
@@ -297,7 +314,8 @@ def iter_mob_loot(entity, ordinary=False):
                 continue
 
             if (entity["id"].value == "Skeleton" and
-                equip["id"].value == 261):  # Bow
+                equip["id"].value in (261,    # Bow
+                                      272)):  # Stone Sword (Wither Skeleton)
                 continue
 
         yield i, mc.Item(equip)
@@ -305,7 +323,7 @@ def iter_mob_loot(entity, ordinary=False):
 
 def xp_next(level):
     """Return the amount of XP needed to go from a level to the next one"""
-    # For Minecraft 1.8 (snapshot 14w02a) onwards: 2L+7; 5L-38; 9L-158
+    # For Minecraft 1.8 (snapshot 14w02a) onwards: 2L + 7; 5L - 38; 9L - 158
     if level <= 15: return 17
     if level <= 30: return 3 * level -  28  # == xpn(15)=17 + 3(L-15)
     else:           return 7 * level - 148  # == xpn(30)=62 + 7(L-30)
@@ -401,7 +419,7 @@ def main(argv=None):
                 for i, (idx, equip) in enumerate(iter_mob_loot(entity)):
                     if i == 0:  # first "interesting" equipment item
                         log.debug("%s %s equipped with:",
-                                  pos, entity["id"].value)
+                                  pos, mob_name(entity))
                     log.debug("%s%s", 33 * ' ', equip.description)
                     add_item_weight(points, equip, pos)
 
@@ -466,7 +484,7 @@ def main(argv=None):
                     continue
 
                 log.info("%s      Added to inventory [slot %3d], from %s: %s",
-                         pos, slot, entity["id"].value, equip.fullname)
+                         pos, slot, mob_name(entity), equip.fullname)
 
                 # Remove the equipment
                 entity["Equipment"][i] = nbt.TAG_Compound()
