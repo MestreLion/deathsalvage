@@ -48,6 +48,7 @@ from xdg.BaseDirectory import xdg_cache_home
 import copy
 import operator
 import itertools
+import math
 
 import pymctoolslib as mc
 
@@ -157,11 +158,28 @@ class Position(object):
         return "(%5d, %5d, %3d)" % self.coords
 
 
-def centroid(points):
+def centroid(points, sd_goal=10, sd_filter=1):
     x, z, y, w = zip(*points)
-    l = sum(w)  # len(points)
-    return Position.from_xzy(*(sum(itertools.imap(operator.mul, _, w)) / l
-                               for _ in (x, z, y)))
+    size = sum(w)         # sum of weights
+    length = len(points)  # number of points
+    center = tuple(sum(itertools.imap(operator.mul, _, w)) / size
+                   for _ in (x, z, y))
+    distances = tuple(math.sqrt(sum((center[_]-_p[_])**2
+                                    for _ in (0, 1)))  # ignoring y
+                      for _p in points)
+    sd = math.sqrt(sum(_**2 for _ in distances) / length)  # not weighted
+
+    centerpos = Position.from_xzy(*center)
+
+    log.debug("Centroid of %2d items: %s, StdDev: %4.1f", length, centerpos, sd)
+
+    if sd > sd_goal:
+        points = [_p for _p, _d in zip(points, distances) if _d/sd < sd_filter]
+        if len(points) < length:
+            return centroid(points)
+
+    return centerpos
+
 
 class Inventory(object):
     _armorslots = {_: 103 - ((_ - MIN_ARMOR) % 4)
@@ -353,11 +371,11 @@ def add_xp(player, xp):
 def add_item_weight(points, item, pos):
     # Weight named and enchanted items as large size XP Orb
     if 'tag' in item:
-        points.append(pos.coords + (37**2,))
+        points.append(pos.coords + (37,))
 
     # Diamond items as medium size
     elif item["id"] in DIAMOND_ITEMS:
-        points.append(pos.coords + (17**2,))
+        points.append(pos.coords + (17,))
 
 
 def main(argv=None):
@@ -414,7 +432,7 @@ def main(argv=None):
                        entity["Age"].value,
                        entity["Value"].value,
                     )
-                    points.append(pos.coords + (entity["Value"].value**2,))
+                    points.append(pos.coords + (entity["Value"].value,))
 
                 for i, (idx, equip) in enumerate(iter_mob_loot(entity)):
                     if i == 0:  # first "interesting" equipment item
@@ -436,7 +454,7 @@ def main(argv=None):
 
     inventory = Inventory(player)
 
-    for chunk in mc.iter_chunks(world, deathpos.x, deathpos.z, 20,
+    for chunk in mc.iter_chunks(world, deathpos.x, deathpos.z, 10,
                                 progress=False):
         dirtychunk = False
         removal = set()
