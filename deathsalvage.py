@@ -63,7 +63,7 @@ log = logging.getLogger(myname)
 
 # Sword, Tools (including Hoe), Armor
 DIAMOND_ITEMS = set(range(276, 280) + [293] + range(310, 314))
-MIN_ARMOR = min(mc.Item.armor_ids)
+ARMOR_SLOTS = (103, 102, 101, 100)
 
 
 def setuplogging(level):
@@ -182,8 +182,12 @@ def centroid(points, sd_goal=10, sd_filter=1):
 
 
 class Inventory(object):
-    _armorslots = {_: 103 - ((_ - MIN_ARMOR) % 4)
+    _armorslots = {_: max(ARMOR_SLOTS) - ((_ - min(mc.Item.armor_ids)) % 4)
                    for _ in mc.Item.armor_ids}
+
+    _armorslots.update({_: max(ARMOR_SLOTS) - (_i % 4)
+                        for _i, _ in enumerate(mc.Item.armor_strids)})
+
 
     def __init__(self, player):
         self.inventory = player["Inventory"]
@@ -417,7 +421,7 @@ def main(argv=None):
             for entity in chunk.Entities:
                 pos = Position(entity)
 
-                if entity["id"].value == "Item":
+                if entity["id"].value in ("Item", "minecraft:item"):
                     item = mc.Item(entity["Item"])
                     log.debug("%s\t%4d\t%s",
                        pos,
@@ -426,7 +430,7 @@ def main(argv=None):
                     )
                     add_item_weight(points, item, pos)
 
-                elif entity["id"].value == "XPOrb":
+                elif entity["id"].value in ("XPOrb", "experience_orb"):
                     log.debug("%s\t%4d\t   XP Orb worth %3d XP",
                        pos,
                        entity["Age"].value,
@@ -462,7 +466,7 @@ def main(argv=None):
         for idx, entity in enumerate(chunk.Entities):
             pos = Position(entity)
 
-            if entity["id"].value == "Item":
+            if entity["id"].value in ("Item", "minecraft:item"):
                 item = mc.Item(entity["Item"])
 
                 # Stack the item to inventory
@@ -486,7 +490,7 @@ def main(argv=None):
                         dirtychunk = True
                         item["Count"] = remaining
 
-            elif entity["id"].value == "XPOrb":
+            elif entity["id"].value in ("XPOrb", "experience_orb"):
                 log.info("%s %4d Absorbed XP Orb worth %3d XP, level %.2f",
                          pos, entity["Age"].value, entity["Value"].value,
                          sum(add_xp(player, entity["Value"].value)))
