@@ -63,7 +63,6 @@ log = logging.getLogger(myname)
 
 # Sword, Tools (including Hoe), Armor
 DIAMOND_ITEMS = set(range(276, 280) + [293] + range(310, 314))
-ARMOR_SLOTS = (103, 102, 101, 100)
 
 
 def setuplogging(level):
@@ -182,13 +181,6 @@ def centroid(points, sd_goal=10, sd_filter=1):
 
 
 class Inventory(object):
-    _armorslots = {_: max(ARMOR_SLOTS) - ((_ - min(mc.Item.armor_ids)) % 4)
-                   for _ in mc.Item.armor_ids}
-
-    _armorslots.update({_: max(ARMOR_SLOTS) - (_i % 4)
-                        for _i, _ in enumerate(mc.Item.armor_strids)})
-
-
     def __init__(self, player):
         self.inventory = player["Inventory"]
 
@@ -273,8 +265,8 @@ class Inventory(object):
         # Get a free slot suitable for the item
         # For armor, try to wear in its corresponding slot
         slot = None
-        if wear_armor and item.is_armor:
-            slot = self._armorslots[item["id"]]
+        if wear_armor and item.type.is_armor:
+            slot = item.type.armorslot
             if slot in self.free_armor:
                 self.free_armor.remove(slot)
             else:
