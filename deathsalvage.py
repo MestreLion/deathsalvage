@@ -62,7 +62,8 @@ log = logging.getLogger(myname)
 
 
 # Sword, Tools (including Hoe), Armor
-DIAMOND_ITEMS = set(range(276, 280) + [293] + range(310, 314))
+DIAMOND_ITEMS = set(_.fullstrid for _ in mc.ItemTypes.searchItems('diamond'))
+IRON_ITEMS    = set(_.fullstrid for _ in mc.ItemTypes.searchItems('iron'))
 
 
 def setuplogging(level):
@@ -372,6 +373,10 @@ def add_item_weight(points, item, pos):
     # Diamond items as medium size
     elif item["id"] in DIAMOND_ITEMS:
         points.append(pos.coords + (17,))
+
+    # Iron items as small size
+    elif item["id"] in IRON_ITEMS:
+        points.append(pos.coords + (11,))
 
 
 def main(argv=None):
