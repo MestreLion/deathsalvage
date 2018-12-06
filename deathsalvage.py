@@ -415,8 +415,12 @@ def main(argv=None):
 
     else: # XP Orbs center, named item, etc...
         searchpos = Position.from_xz(args.xpos, args.zpos)
-        log.info("Searching entities around %s with radius %d",
-                 searchpos.xz, args.radius)
+        if args.xpos and args.zpos:
+            msg = ("Searching entities around %s with radius %d",
+                   searchpos.xz, args.radius)
+        else:
+            msg = ("Searching entities on the entire world",)
+        log.info(*msg)
         log.debug("(%5s, %5s, %3s)\t%4s\t%2s %s",
                   "X", "Z", "Y", "Age", "Qt", "Item")
 
