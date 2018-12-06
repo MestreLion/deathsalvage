@@ -65,6 +65,12 @@ log = logging.getLogger(myname)
 DIAMOND_ITEMS = set(_.fullstrid for _ in mc.ItemTypes.searchItems('diamond'))
 IRON_ITEMS    = set(_.fullstrid for _ in mc.ItemTypes.searchItems('iron'))
 
+XP_IDS = set((
+    "XPOrb",                    # up to 1.9
+    "minecraft:xp_orb",         # 1.11+
+    "minecraft:experience_orb"  # 1.13+
+))
+
 
 def setuplogging(level):
     # Console output
@@ -336,12 +342,15 @@ def iter_mob_loot(entity, ordinary=False):
         yield i, mc.Item(equip)
 
 
-def xp_next(level):
+def xp_next(level, version=(1,11,2)):
     """Return the amount of XP needed to go from a level to the next one"""
-    # For Minecraft 1.8 (snapshot 14w02a) onwards: 2L + 7; 5L - 38; 9L - 158
-    if level <= 15: return 17
-    if level <= 30: return 3 * level -  28  # == xpn(15)=17 + 3(L-15)
-    else:           return 7 * level - 148  # == xpn(30)=62 + 7(L-30)
+    if version >= (1, 8):
+        consts = ((31, 9, -158), (16, 5, -38), (0, 2,  7))
+    else:
+        consts = ((31, 7, -148), (16, 3, -28), (0, 0, 17))
+
+    for c in consts:
+        if level >= c[0]: return c[1] * level + c[2]
 
 
 def add_xp(player, xp):
@@ -427,7 +436,7 @@ def main(argv=None):
                     )
                     add_item_weight(points, item, pos)
 
-                elif entity["id"].value in ("XPOrb", "experience_orb"):
+                elif entity["id"].value in XP_IDS:
                     log.debug("%s\t%4d\t   XP Orb worth %3d XP",
                        pos,
                        entity["Age"].value,
@@ -487,7 +496,7 @@ def main(argv=None):
                         dirtychunk = True
                         item["Count"] = remaining
 
-            elif entity["id"].value in ("XPOrb", "experience_orb"):
+            elif entity["id"].value in XP_IDS:
                 log.info("%s %4d Absorbed XP Orb worth %3d XP, level %.2f",
                          pos, entity["Age"].value, entity["Value"].value,
                          sum(add_xp(player, entity["Value"].value)))
