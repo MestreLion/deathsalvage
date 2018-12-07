@@ -120,6 +120,11 @@ def parseargs(args=None):
                         help="Exact death X and Z coordinates"
                             " to salvage dropped items.")
 
+    parser.add_argument('--xp-factor', '-X', dest='xpfactor', metavar='FACTOR',
+                        default=1, type=int,
+                        help="Multiply XP Orb experience gain by %(metavar)s."
+                            " [Default: %(default)s]")
+
     parser.add_argument('--apply', '-a', dest='apply',
                         default=False,
                         action="store_true",
@@ -501,9 +506,10 @@ def main(argv=None):
                         item["Count"] = remaining
 
             elif entity["id"].value in XP_IDS:
+                xp = entity["Value"].value * args.xpfactor
                 log.info("%s %4d Absorbed XP Orb worth %3d XP, level %.2f",
-                         pos, entity["Age"].value, entity["Value"].value,
-                         sum(add_xp(player, entity["Value"].value)))
+                         pos, entity["Age"].value, xp,
+                         sum(add_xp(player, xp)))
                 removal.add(idx)
 
             # For mobs that can pick up loot,
