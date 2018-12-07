@@ -165,7 +165,7 @@ class Position(object):
 
 
 def centroid(points, sd_goal=10, sd_filter=1):
-    x, z, y, w = zip(*points)
+    x, z, y, w, _ = zip(*points)
     size = sum(w)         # sum of weights
     length = len(points)  # number of points
     center = tuple(sum(itertools.imap(operator.mul, _, w)) / size
@@ -377,15 +377,15 @@ def add_xp(player, xp):
 def add_item_weight(points, item, pos):
     # Weight named and enchanted items as large size XP Orb
     if 'tag' in item:
-        points.append(pos.coords + (37,))
+        points.append(pos.coords + (37, item))
 
     # Diamond items as medium size
     elif item["id"] in DIAMOND_ITEMS:
-        points.append(pos.coords + (17,))
+        points.append(pos.coords + (17, item))
 
     # Iron items as small size
     elif item["id"] in IRON_ITEMS:
-        points.append(pos.coords + (11,))
+        points.append(pos.coords + (11, item))
 
 
 def main(argv=None):
@@ -446,7 +446,7 @@ def main(argv=None):
                        entity["Age"].value,
                        entity["Value"].value,
                     )
-                    points.append(pos.coords + (entity["Value"].value,))
+                    points.append(pos.coords + (entity["Value"].value, mc.XpOrb(entity)))
 
                 for i, (idx, equip) in enumerate(iter_mob_loot(entity)):
                     if i == 0:  # first "interesting" equipment item
@@ -456,8 +456,8 @@ def main(argv=None):
                     add_item_weight(points, equip, pos)
 
         if points:
-            log.debug("Interesting entities and weights to find death location:")
-            [log.debug("%s - %4d", Position.from_xzy(*_[:3]), _[-1])
+            log.info("Interesting entities and weights to find death location:")
+            [log.info("%s - Weight %3d - %s", Position.from_xzy(*_[:3]), _[3], _[4])
              for _ in points]
             deathpos = centroid(points)
             log.info("Estimated death location is %s",
