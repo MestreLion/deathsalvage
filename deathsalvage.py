@@ -265,7 +265,6 @@ class Inventory(object):
         """Add an item (or a clone) to a free inventory slot.
             Return the used slot space, if any, or raise mc.MCError
         """
-        from pymctoolslib.pymclevel import nbt
         e = mc.MCError("No suitable free inventory slot to add %s" %
                        item.description)
 
@@ -291,12 +290,10 @@ class Inventory(object):
             slot = self.free_slots.pop(0)
 
         # Add the item
-        itemnbt = item.get_nbt()
         if clone:
-            itemnbt = item.copy()
-        # TODO: check with nbt/NbtObject how to properly add a new tag
-        itemnbt["Slot"] = nbt.TAG_Byte(slot)
-        self.inventory.append(itemnbt)
+            item = item.clone()
+        item.set_slot(slot)
+        self.inventory.append(item.get_nbt())
 
         return slot
 
