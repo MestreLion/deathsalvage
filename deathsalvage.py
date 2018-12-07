@@ -45,7 +45,6 @@ import os
 import os.path as osp
 import logging
 from xdg.BaseDirectory import xdg_cache_home
-import copy
 import operator
 import itertools
 import math
@@ -206,7 +205,7 @@ class Inventory(object):
             Raises ValueError if item count is zero or is than max stack size.
             Return a 3-tuple (count_remaining, [slots, ...], [counts, ...])
         '''
-        item = mc.Item(copy.deepcopy(item.nbt))
+        item = item.clone()
 
         size = item.type.stacksize
         count = item["Count"]  # item.count will not be changed until fully stacked
@@ -287,9 +286,10 @@ class Inventory(object):
             slot = self.free_slots.pop(0)
 
         # Add the item
-        itemnbt = item.nbt
+        itemnbt = item.get_nbt()
         if clone:
-            itemnbt = copy.deepcopy(itemnbt)
+            itemnbt = item.copy()
+        # TODO: check with nbt/NbtObject how to properly add a new tag
         itemnbt["Slot"] = nbt.TAG_Byte(slot)
         self.inventory.append(itemnbt)
 
