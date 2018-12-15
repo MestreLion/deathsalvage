@@ -35,8 +35,6 @@ Ideas:
     - Inventory after salvage
     - Failed items count
 
-- XP Absorb: 1 level every 7 XP, rounded up, as it happens on death
-
 - Update setuplogging(), move to pymctoolslib
 """
 
@@ -189,113 +187,6 @@ def centroid(points, sd_goal=10, sd_filter=1):
             return centroid(points)
 
     return centerpos
-
-
-class Inventory(object):
-    def __init__(self, player):
-        self.inventory = player["Inventory"]
-
-        if len(self.inventory) == 40:  # shortcut for full inventory
-            self.free_slots = []
-            self.free_armor = []
-        else:
-            slots = set(_["Slot"].value for _ in self.inventory)
-            self.free_slots = sorted(set(range(36))       - slots)
-            self.free_armor = sorted(set(range(100, 104)) - slots)
-
-    def stack_item(self, item, wear_armor=True):
-        '''Add an item clone to the inventory, trying to stack it with other
-            items according to item's max stack size. Original item is never
-            changed.
-            Raises ValueError if item count is zero or is than max stack size.
-            Return a 3-tuple (count_remaining, [slots, ...], [counts, ...])
-        '''
-        item = item.clone()
-
-        size = item.type.stacksize
-        count = item["Count"]  # item.count will not be changed until fully stacked
-
-        # Assertions
-        if count == 0:
-            raise ValueError("Item count is zero: %s" % item)
-
-        if count > size:
-            raise ValueError(
-                "Item count is greater than max stack size (%d/%d): %s" %
-                (count, size, item))
-
-        # Shortcut 1-stack items like tools, armor, weapons, etc
-        if size == 1:
-            try:
-                return 0, [(self.add_item(item, wear_armor, clone=True), 1)]
-            except mc.MCError:
-                return count, []
-
-        # Loop each inventory slot, stacking the item onto similar items
-        # that are not maximized until item count is 0
-        slots  = []
-        for stack in self.inventory:
-            stack = mc.Item(stack)
-            if (stack.key == item.key and
-                stack.name == item.name and  # avoid stacking named items
-                stack["Count"] < size):
-
-                total = stack["Count"] + count
-                diff = min(size, total) - stack["Count"]
-                stack["Count"] += diff
-                count          -= diff
-
-                slots.append((stack["Slot"], diff))
-
-                if count == 0:
-                    break
-
-        if count > 0:
-            item["Count"] = count
-            try:
-                slots.append((self.add_item(item, wear_armor, clone=False),
-                              count))
-                count = 0
-            except mc.MCError:
-                pass
-
-        return count, slots
-
-    def add_item(self, item, wear_armor=True, clone=True):
-        """Add an item (or a clone) to a free inventory slot.
-            Return the used slot space, if any, or raise mc.MCError
-        """
-        e = mc.MCError("No suitable free inventory slot to add %s" %
-                       item.description)
-
-        # shortcut for no free slots
-        if not self.free_slots and not self.free_armor:
-            raise e
-
-        # Get a free slot suitable for the item
-        # For armor, try to wear in its corresponding slot
-        slot = None
-        if wear_armor and item.type.is_armor:
-            slot = item.type.armorslot
-            if slot in self.free_armor:
-                self.free_armor.remove(slot)
-            else:
-                # Corresponding armor slot is not free
-                slot = None
-
-        if slot is None:
-            if not self.free_slots:
-                raise e
-
-            slot = self.free_slots.pop(0)
-
-        # Add the item
-        if clone:
-            item = item.clone()
-        item.set_slot(slot)
-        self.inventory.append(item.get_nbt())
-
-        return slot
 
 
 def mob_name(entity):
@@ -468,7 +359,7 @@ def main(argv=None):
             log.error("Could not determine player death coordinates")
             return
 
-    inventory = Inventory(player)
+    inventory = mc.Player(player).inventory
 
     for chunk in mc.iter_chunks(world, deathpos.x, deathpos.z, 10,
                                 progress=False):
