@@ -39,10 +39,8 @@ Ideas:
 """
 
 import sys
-import os
 import os.path as osp
 import logging
-from xdg.BaseDirectory import xdg_cache_home
 import operator
 import itertools
 import math
@@ -50,13 +48,7 @@ import math
 import pymctoolslib as mc
 
 
-if __name__ == '__main__':
-    myname = osp.basename(osp.splitext(__file__)[0])
-else:
-    myname = __name__
-
-log = logging.getLogger(myname)
-
+log = logging.getLogger(__name__)
 
 # Sword, Tools (including Hoe), Armor
 DIAMOND_ITEMS = set(_.fullstrid for _ in mc.ItemTypes.searchItems('diamond'))
@@ -67,34 +59,6 @@ XP_IDS = set((
     "minecraft:xp_orb",         # 1.11+
     "minecraft:experience_orb"  # 1.13+
 ))
-
-
-def setuplogging(level):
-    # Console output
-    for logger, lvl in [
-            (log, level),
-            (logging.getLogger("pymctoolslib.pymctoolslib"), level),
-            # pymclevel is too verbose
-            (logging.getLogger("pymctoolslib.pymclevel"), logging.WARNING),
-    ]:
-        sh = logging.StreamHandler()
-        sh.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
-        sh.setLevel(lvl)
-        logger.addHandler(sh)
-
-    # File output
-    logger = logging.getLogger()  # root logger, so it also applies to pymclevel
-    logger.setLevel(logging.DEBUG)  # set to minimum so it doesn't discard file output
-    try:
-        logdir = osp.join(xdg_cache_home, 'minecraft')
-        if not osp.exists(logdir):
-            os.makedirs(logdir)
-        fh = logging.FileHandler(osp.join(logdir, "%s.log" % myname))
-        fh.setFormatter(logging.Formatter('%(asctime)s\t%(levelname)s\t%(name)s\t%(message)s'))
-        fh.setLevel(logging.DEBUG)
-        logger.addHandler(fh)
-    except IOError as e:  # Probably access denied
-        logger.warn("%s\nLogging will not work.", e)
 
 
 def parseargs(args=None):
@@ -283,7 +247,7 @@ def add_item_weight(points, item, pos):
 
 def main(argv=None):
     args = parseargs(argv)
-    setuplogging(args.loglevel)
+    logging.basicConfig(level=args.loglevel, format='%(levelname)s: %(message)s')
     log.debug(args)
 
     from pymctoolslib.pymclevel import nbt
@@ -435,6 +399,7 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
+    log = logging.getLogger(osp.basename(osp.splitext(__file__)[0]))
     try:
         sys.exit(main())
     except mc.MCError as e:
