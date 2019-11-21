@@ -85,11 +85,6 @@ def parseargs(args=None):
                         help="Multiply XP Orb experience gain by %(metavar)s."
                             " [Default: %(default)s]")
 
-    parser.add_argument('--apply', '-a', dest='apply',
-                        default=False,
-                        action="store_true",
-                        help="Apply changes.")
-
     return parser.parse_args(args)
 
 
@@ -250,13 +245,13 @@ def main(argv=None):
 
     from pymctoolslib.pymclevel import nbt
 
-    world, player = mc.load_player_dimension(args.world, args.player)
-
+    world = mc.World(args.world)
     log.info("Determining '%s' death coordinates in world '%s' [%s]",
              args.player, world.LevelName, world.filename)
 
-    if player["Health"].value == 0 and player["DeathTime"].value > 0:
-        deathpos = Position(player)
+    player = world.get_player(args.player)
+    if player["Health"] == 0 and player["DeathTime"] > 0:
+        deathpos = Position(player.get_nbt())
         log.warn("Player is currently dead at %s", deathpos)
         log.warn("Not salvaging items, as inventory is cleared after respawn")
         log.warn("Enter the game, respawn, save and quit, then run this again"
@@ -281,8 +276,8 @@ def main(argv=None):
 
         points = []
 
-        for chunk in mc.iter_chunks(world, searchpos.x, searchpos.z, args.radius,
-                                    progress = args.loglevel==logging.INFO):
+        for chunk in world.iter_chunks(x=searchpos.x, z=searchpos.z, size=args.radius,
+                                       progress=(args.loglevel==logging.INFO)):
             for entity in chunk.Entities:
                 pos = Position(entity)
 
@@ -321,10 +316,9 @@ def main(argv=None):
             log.error("Could not determine player death coordinates")
             return
 
-    inventory = mc.Player(player).inventory
+    inventory = player.inventory
 
-    for chunk in mc.iter_chunks(world, deathpos.x, deathpos.z, 10,
-                                progress=False):
+    for chunk in world.iter_chunks(x=deathpos.x, z=deathpos.z, size=10, progress=False):
         dirtychunk = False
         removal = set()
 
@@ -387,11 +381,7 @@ def main(argv=None):
         if dirtychunk:
             chunk.chunkChanged(calcLighting=False)
 
-    if args.apply:
-        log.info("Applying changes and saving world...")
-        world.saveInPlace()
-    else:
-        log.warn("Not saving world, use --apply to apply changes")
+    mc.save_world(world, args.save)
 
 
 
