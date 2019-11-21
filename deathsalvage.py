@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 #    Copyright (C) 2014 Rodrigo Silva (MestreLion) <linux@rodrigosilva.com>
 #
@@ -42,7 +41,6 @@ import sys
 import os.path as osp
 import logging
 import operator
-import itertools
 import math
 
 import pymctoolslib as mc
@@ -134,7 +132,7 @@ def centroid(points, sd_goal=10, sd_filter=1):
     x, z, y, w, _ = zip(*points)
     size = sum(w)         # sum of weights
     length = len(points)  # number of points
-    center = tuple(sum(itertools.imap(operator.mul, _, w)) / size
+    center = tuple(sum(map(operator.mul, _, w)) / size
                    for _ in (x, z, y))
     distances = tuple(math.sqrt(sum((center[_]-_p[_])**2
                                     for _ in (0, 1)))  # ignoring y
