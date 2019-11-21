@@ -49,8 +49,8 @@ import pymctoolslib as mc
 log = logging.getLogger(__name__)
 
 # Sword, Tools (including Hoe), Armor
-DIAMOND_ITEMS = set(_.fullstrid for _ in mc.ItemTypes.searchItems('diamond'))
-IRON_ITEMS    = set(_.fullstrid for _ in mc.ItemTypes.searchItems('iron'))
+DIAMOND_ITEMS = set(_.fullkey for _ in mc.ItemTypes.searchItems('diamond'))
+IRON_ITEMS    = set(_.fullkey for _ in mc.ItemTypes.searchItems('iron'))
 
 XP_IDS = set((
     "XPOrb",                    # up to 1.9
