@@ -378,7 +378,8 @@ def main(argv=None):
                                  for idx, entity in enumerate(chunk.Entities)
                                  if idx not in removal]
 
-        if dirtychunk:
+        # Temporarily disabled, as pymclevel can't read 1.13 blocks
+        if False and dirtychunk:
             chunk.chunkChanged(calcLighting=False)
 
     mc.save_world(world, args.save)
