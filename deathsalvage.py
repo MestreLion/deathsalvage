@@ -123,8 +123,21 @@ class Position(object):
         return "(%5d, %5d, %3d)" % self.coords
 
 
-def centroid(points, sd_goal=10, sd_filter=1):
-    x, z, y, w, _ = zip(*points)
+def centroid(points, sd_goal=10, sd_threshold=1):
+    """Find the Centroid (Geometric Center) of a set of weighted <points>.
+
+    Recursively eliminates outlier points until the Standard Deviation (SD) goal <sd_goal>
+    is achieved or when there are no more outliers to eliminate. An outlier is a point
+    whose distance to the centroid is greater than SD times the <sd_threshold>.
+
+    Distance from centroid, and subsequently the SD and Goal, are measured in "cylindrical"
+    space units, ignoring Y (and Weight), but the Centroid itself is calculated using all 3
+    X, Z and Y coordinates and the Weight.
+
+    <points> can be any iterable, and each point is a tuple (or iterable) of X, Z, Y, Weight,
+    additional elements being ignored.
+    """
+    x, z, y, w = zip(*points)[:4]
     size = sum(w)         # sum of weights
     length = len(points)  # number of points
     center = tuple(sum(map(operator.mul, _, w)) / size
@@ -139,7 +152,7 @@ def centroid(points, sd_goal=10, sd_filter=1):
     log.debug("Centroid of %2d items: %s, StdDev: %4.1f", length, centerpos, sd)
 
     if sd > sd_goal:
-        points = [_p for _p, _d in zip(points, distances) if _d/sd < sd_filter]
+        points = [_p for _p, _d in zip(points, distances) if _d/sd < sd_threshold]
         if len(points) < length:
             return centroid(points)
 
