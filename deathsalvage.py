@@ -208,7 +208,8 @@ def add_xp(player, xp):
         possibly gaining levels
         Return the updated level and the percentage towards the next level
     """
-    level, xpp = (player[_].value for _ in ("XpLevel", "XpP"))
+    level = player['XpLevel']
+    xpp   = player['XpP']
 
     xpp += float(xp) / xp_next(level)
     while xpp >= 1:
@@ -216,10 +217,10 @@ def add_xp(player, xp):
         level += 1
         xpp /= xp_next(level)
 
-    player["XpTotal"].value += xp
-    player["Score"  ].value += xp
-    player["XpLevel"].value  = level
-    player["XpP"    ].value  = xpp
+    player["XpTotal"] += xp
+    player["Score"  ] += xp
+    player["XpLevel"]  = level
+    player["XpP"    ]  = xpp
 
     return level, xpp
 
